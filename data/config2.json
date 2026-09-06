@@ -1,0 +1,22 @@
+{
+  "maps": [
+    {
+      "id": "first",
+      "name": "First Map",
+      "roads": [
+        { "x0": 0, "y0": 0, "x1": 10 }
+      ],
+      "buildings": [],
+      "offices": []
+    },
+    {
+      "id": "second",
+      "name": "Second Map",
+      "roads": [
+        { "x0": 5, "y0": 5, "y1": 25 }
+      ],
+      "buildings": [],
+      "offices": []
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+[requires]
+boost/1.79.0
+miniaudio/0.11.9
+
+[generators]
+CMakeDeps
+CMakeToolchain
