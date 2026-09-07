@@ -83,6 +83,11 @@ namespace http_server {
     void DoClose() {
       beast::error_code ec;
       stream_.socket().shutdown(tcp::socket::shutdown_send, ec);
+      if (ec) {
+        std::cerr << "[DoClose] shutdown failed: " << ec.message()
+                  << " (code: " << ec.value() << ", category: "
+                  << ec.category().name() << ")\n";
+      }
     }
 
     beast::tcp_stream stream_;
