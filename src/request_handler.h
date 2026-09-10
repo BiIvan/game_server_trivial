@@ -124,7 +124,7 @@ namespace http_handler {
     }
 
     model::Game& game_;
-    
+
   public:
     explicit RequestHandler(model::Game& game)
       : game_{game} {
@@ -179,3 +179,4 @@ namespace http_handler {
   };
 
 }  // namespace http_handler
+
