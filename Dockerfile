@@ -1,47 +1,51 @@
 # Этап сборки
-FROM gcc:11.3 AS build
+FROM gcc:13 AS build
 
-RUN apt update && apt install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     git \
     wget \
+    ca-certificates \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Ставим свежий CMake (3.28.3 — точно выше 3.20)
-RUN wget -O cmake.tar.gz https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz && \
-    tar -xzf cmake.tar.gz --strip-components=1 -C /usr/local && \
-    rm cmake.tar.gz
+RUN wget -q -O /tmp/cmake.tar.gz \
+        https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz \
+    && tar -xzf /tmp/cmake.tar.gz --strip-components=1 -C /usr/local \
+    && rm /tmp/cmake.tar.gz \
+    && cmake --version
 
-# Conan
-RUN pip3 install "conan==1.*"
+RUN pip3 install --no-cache-dir --break-system-packages "conan==1.*"
+
+RUN conan profile new default --detect --force && \
+    conan profile update settings.compiler.libcxx=libstdc++11 default
 
 WORKDIR /app
-COPY conanfile.txt .
-COPY CMakeLists.txt .
-COPY ./src src
 
-# Сборка
+COPY conanfile.txt ./
+COPY CMakeLists.txt ./
+COPY ./src ./src/
+
 RUN mkdir -p build && cd build && \
     conan install .. --build=missing && \
     cmake -DCMAKE_BUILD_TYPE=Release .. && \
-    cmake --build .
+    cmake --build . --parallel "$(nproc)" && \
+    find . -type f -name game_server -ls
 
-# Этап рантайма
-FROM ubuntu:22.04 AS run
+# Этап запуска
+FROM gcc:13 AS run
 
-# Создаём пользователя
-RUN groupadd -r www && useradd -r -g www www
+RUN groupadd -r www && \
+    useradd -r -g www -d /app -s /usr/sbin/nologin www
 
-# Копируем бинарник (путь исправлен: он лежит прямо в build/)
-COPY --from=build /app/build/bin/game_server /app/
+COPY --from=build /app/build/bin/game_server /app/game_server
 COPY ./data /app/data
 
-# Права на запуск
 RUN chown -R www:www /app
 
 USER www
 WORKDIR /app
 
-# Запуск
+EXPOSE 8080
+
 ENTRYPOINT ["/app/game_server", "/app/data/config.json"]
