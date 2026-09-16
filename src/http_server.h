@@ -26,7 +26,7 @@ namespace http_server {
     : public std::enable_shared_from_this<HttpSession<RequestHandler>> {
     class SendLambda {
       HttpSession& session_;
-
+      
     public:
       explicit SendLambda(HttpSession& session) noexcept
         : session_(session) {
@@ -96,7 +96,7 @@ namespace http_server {
     http::request<http::string_body> request_;
     RequestHandler& request_handler_;
     std::shared_ptr<void> response_;
-
+      
   public:
     HttpSession(tcp::socket&& socket, RequestHandler& request_handler)
       : stream_(std::move(socket))
@@ -129,11 +129,11 @@ namespace http_server {
 
       DoAccept();
     }
-
+    
     net::io_context& ioc_;
     tcp::acceptor acceptor_;
     RH& request_handler_;
-
+    
   public:
     Listener(net::io_context& ioc,
          tcp::endpoint endpoint,
