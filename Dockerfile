@@ -12,8 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN wget -q -O /tmp/cmake.tar.gz \
         https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz \
     && tar -xzf /tmp/cmake.tar.gz --strip-components=1 -C /usr/local \
-    && rm /tmp/cmake.tar.gz \
-    && cmake --version
+    && rm /tmp/cmake.tar.gz
 
 RUN pip3 install --no-cache-dir --break-system-packages "conan==1.*"
 
@@ -22,18 +21,28 @@ RUN conan profile new default --detect --force && \
 
 WORKDIR /app
 
+# --- Кэш зависимостей: копируем ТОЛЬКО манифесты ---
 COPY conanfile.txt ./
 COPY CMakeLists.txt ./
+
+# Conan ставит зависимости. Если conanfile.txt не менялся — слой берётся из кэша.
+RUN mkdir -p build && cd build && conan install .. --build=missing
+
+# --- Только теперь копируем исходники ---
 COPY ./src ./src/
 
-RUN mkdir -p build && cd build && \
-    conan install .. --build=missing && \
+# Сборка проекта (без conan install — он уже сделан выше)
+RUN cd build && \
     cmake -DCMAKE_BUILD_TYPE=Release .. && \
-    cmake --build . --parallel "$(nproc)" && \
-    find . -type f -name game_server -ls
+    cmake --build . --parallel "$(nproc)"
 
-# Этап запуска
-FROM gcc:13 AS run
+# --- Этап запуска (тонкий образ) ---
+FROM debian:bookworm-slim AS run
+
+# libstdc++6 нужен для запуска бинарника, собранного gcc:13
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libstdc++6 \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -r www && \
     useradd -r -g www -d /app -s /usr/sbin/nologin www
@@ -48,4 +57,4 @@ WORKDIR /app
 
 EXPOSE 8080
 
-ENTRYPOINT ["/app/game_server", "/app/data/config.json"]
+ENTRYPOINT ["/app/game_server", "/app/data/config.json static"]
