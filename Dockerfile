@@ -37,7 +37,8 @@ RUN cd build && \
     cmake --build . --parallel "$(nproc)"
 
 # --- Этап запуска (тонкий образ) ---
-FROM debian:bookworm-slim AS run
+#FROM debian:bookworm-slim AS run
+FROM debian:trixie-slim AS run
 
 # libstdc++6 нужен для запуска бинарника, собранного gcc:13
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -49,6 +50,7 @@ RUN groupadd -r www && \
 
 COPY --from=build /app/build/bin/game_server /app/game_server
 COPY ./data /app/data
+COPY ./static /app/static
 
 RUN chown -R www:www /app
 
@@ -57,4 +59,4 @@ WORKDIR /app
 
 EXPOSE 8080
 
-ENTRYPOINT ["/app/game_server", "/app/data/config.json static"]
+ENTRYPOINT ["/app/game_server", "/app/data/config.json", "static"]
