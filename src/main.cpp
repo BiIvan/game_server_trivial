@@ -6,6 +6,9 @@
 #include <algorithm>
 #include <filesystem>
 #include <boost/asio.hpp>
+#include <boost/log/trivial.hpp>
+#include <boost/log/expressions.hpp>
+#include <boost/log/utility/setup/console.hpp>
 
 #include "sdk.h"
 #include "http_server.h"
@@ -14,6 +17,7 @@
 
 namespace fs = std::filesystem;
 namespace net = boost::asio;
+namespace logging = boost::log;
 
 using namespace std::literals;
 using tcp = net::ip::tcp;
@@ -44,7 +48,21 @@ namespace {
 
 }  // namespace
 
+void MyFormatter(logging::record_view const& rec,
+  logging::formatting_ostream& strm) {
+  strm << rec[logging::trivial::severity] << ": "
+   << rec[logging::expressions::smessage];
+}
+
+void InitLogging() {
+  logging::add_console_log(
+  std::cout,
+  logging::keywords::format = &MyFormatter,
+  logging::keywords::auto_flush = true);
+}
+
 int main(int argc, const char* argv[]) {
+  InitLogging();
   if (argc != 3) {
     std::cerr << "Usage: "sv << argv[0] << " <config-file> <static-root>\n"sv;
     return EXIT_FAILURE;
