@@ -4,6 +4,7 @@
 #include <chrono>
 #include <utility>
 #include <iostream>
+#include <optional>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/asio/strand.hpp>
@@ -13,6 +14,7 @@
 #include <boost/beast/core/bind_handler.hpp>
 
 #include "sdk.h"
+#include "logger.h"
 
 namespace http_server {
 
@@ -26,7 +28,7 @@ namespace http_server {
     : public std::enable_shared_from_this<HttpSession<RequestHandler>> {
     class SendLambda {
       HttpSession& session_;
-      
+
     public:
       explicit SendLambda(HttpSession& session) noexcept
         : session_(session) {
@@ -35,15 +37,38 @@ namespace http_server {
       template <typename Response>
       void operator()(Response&& response) const {
         using ResponseType = std::decay_t<Response>;
-        auto response_ptr = std::make_shared<ResponseType>(std::forward<Response>(response));
+        const auto now = std::chrono::steady_clock::now();
+        const auto elapsed = session_.request_time_
+          ? std::chrono::duration_cast<std::chrono::milliseconds>(
+              now - *session_.request_time_)
+              .count()
+          : 0;
+        json::value content_type = nullptr;
+        const auto content_type_it =
+          response.find(http::field::content_type);
+        if (content_type_it != response.end()) {
+          content_type = std::string(content_type_it->value());
+        }
+        BOOST_LOG_TRIVIAL(info)
+          << logging::add_value(
+               additional_data,
+               json::object{
+                 {"response_time", elapsed},
+                 {"code", response.result_int()},
+                 {"content_type", std::move(content_type)},
+               })
+          << "response sent";
+        auto response_ptr =
+          std::make_shared<ResponseType>(
+            std::forward<Response>(response));
         session_.response_ = response_ptr;
         http::async_write(
           session_.stream_,
           *response_ptr,
           beast::bind_front_handler(
-            &HttpSession::OnWrite,session_.shared_from_this(),
-            response_ptr->need_eof())
-        );
+            &HttpSession::OnWrite,
+            session_.shared_from_this(),
+            response_ptr->need_eof()));
       }
     };
 
@@ -64,30 +89,47 @@ namespace http_server {
         return;
       }
       if (ec) {
+        logger::LogError(ec, "read");
         return;
       }
+      request_time_ = std::chrono::steady_clock::now();
+      BOOST_LOG_TRIVIAL(info)
+        << logging::add_value(
+            additional_data,
+            json::object{
+             {"ip", stream_.socket()
+                .remote_endpoint()
+                .address()
+                .to_string()},
+             {"URI", std::string(request_.target())},
+             {"method", std::string(request_.method_string())},
+            })
+        << "request received";
       request_handler_(std::move(request_), SendLambda{*this});
     }
 
     void OnWrite(bool close, beast::error_code ec, std::size_t) {
       if (ec) {
+        logger::LogError(ec, "write");
         return;
       }
       if (close) {
         DoClose();
         return;
       }
-      response_ = nullptr;
+      response_.reset();
+      request_time_.reset();
+      client_endpoint_.reset();
       Read();
     }
 
     void DoClose() {
       beast::error_code ec;
-      stream_.socket().shutdown(tcp::socket::shutdown_send, ec);
-      if (ec) {
-        std::cerr << "[DoClose] shutdown failed: " << ec.message()
-                  << " (code: " << ec.value() << ", category: "
-                  << ec.category().name() << ")\n";
+      stream_.socket().shutdown(
+        tcp::socket::shutdown_send,
+        ec);
+      if (ec && ec != beast::errc::not_connected) {
+        logger::LogError(ec, "write");
       }
     }
 
@@ -96,7 +138,9 @@ namespace http_server {
     http::request<http::string_body> request_;
     RequestHandler& request_handler_;
     std::shared_ptr<void> response_;
-      
+    std::optional<std::chrono::steady_clock::time_point> request_time_;
+    std::optional<tcp::endpoint> client_endpoint_;
+
   public:
     HttpSession(tcp::socket&& socket, RequestHandler& request_handler)
       : stream_(std::move(socket))
@@ -123,17 +167,21 @@ namespace http_server {
     }
 
     void OnAccept(beast::error_code ec, tcp::socket socket) {
-      if (!ec) {
-        std::make_shared<HttpSession<RH>>(std::move(socket),request_handler_)->Run();
+      if (ec) {
+        logger::LogError(ec, "accept");
+      } else {
+        std::make_shared<HttpSession<RH>>(
+          std::move(socket),
+          request_handler_)
+          ->Run();
       }
-
       DoAccept();
     }
-    
+
     net::io_context& ioc_;
     tcp::acceptor acceptor_;
     RH& request_handler_;
-    
+
   public:
     Listener(net::io_context& ioc,
          tcp::endpoint endpoint,
@@ -171,3 +219,4 @@ namespace http_server {
   }
 
 }  // namespace http_server
+

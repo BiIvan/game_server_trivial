@@ -34,11 +34,13 @@ COPY ./src ./src/
 # Сборка проекта (без conan install — он уже сделан выше)
 RUN cd build && \
     cmake -DCMAKE_BUILD_TYPE=Release .. && \
-    cmake --build . --parallel "$(nproc)"
+#    cmake --build . --parallel "$(nproc)"
+    cmake --build . --parallel 1
 
 # --- Этап запуска (тонкий образ) ---
 #FROM debian:bookworm-slim AS run
-FROM debian:trixie-slim AS run
+#FROM debian:trixie-slim AS run
+FROM gcc:13 AS run
 
 # libstdc++6 нужен для запуска бинарника, собранного gcc:13
 RUN apt-get update && apt-get install -y --no-install-recommends \
