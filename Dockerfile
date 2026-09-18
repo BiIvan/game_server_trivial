@@ -26,7 +26,9 @@ COPY conanfile.txt ./
 COPY CMakeLists.txt ./
 
 # Conan ставит зависимости. Если conanfile.txt не менялся — слой берётся из кэша.
-RUN mkdir -p build && cd build && conan install .. --build=missing
+#RUN mkdir -p build && cd build && conan install .. --build=missing
+RUN mkdir -p build && cd build && conan install .. --build=missing && \
+    echo "=== Boost targets ===" && grep -R "add_library(Boost::" -n . || true
 
 # --- Только теперь копируем исходники ---
 COPY ./src ./src/
@@ -61,4 +63,4 @@ WORKDIR /app
 
 EXPOSE 8080
 
-ENTRYPOINT ["/app/game_server", "/app/data/config.json", "static"]
+ENTRYPOINT ["/app/game_server", "/app/data/config.json"]
