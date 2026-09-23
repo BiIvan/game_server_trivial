@@ -7,10 +7,10 @@ CMakeDeps
 CMakeToolchain
 
 [options]
-boost:without_log=False
-boost:without_thread=False
-boost:without_date_time=False
-boost:without_filesystem=False
-boost:without_regex=False
-boost:without_chrono=False
-boost:without_atomic=False
+boost/*:without_log=False
+boost/*:without_thread=False
+boost/*:without_date_time=False
+boost/*:without_filesystem=False
+boost/*:without_regex=False
+boost/*:without_chrono=False
+boost/*:without_atomic=False
