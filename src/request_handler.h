@@ -22,56 +22,61 @@ namespace http_handler {
   namespace json = boost::json;
   namespace fs = std::filesystem;
 
-  class RequestHandler {
+  class RequestHandler : public std::enable_shared_from_this<RequestHandler> {
   public:
-    explicit RequestHandler(model::Game& game, fs::path static_root)
-      : game_{game}
-      , static_root_{
-        fs::weakly_canonical(fs::absolute(std::move(static_root)))} {
+  
+    using Strand = net::strand<net::io_context::executor_type>;
+    
+    explicit RequestHandler(fs::path static_root, Strand api_strand)
+      : static_root_{ fs::weakly_canonical(fs::absolute(std::move(static_root)))}
+      , api_strand_{api_strand} {
     }
 
     RequestHandler(const RequestHandler&) = delete;
     RequestHandler& operator=(const RequestHandler&) = delete;
 
-    template <typename Send>
-    void operator()(
-      http::request<http::string_body>&& req,
-      Send&& send) {
-      const std::string target{req.target()};
-      if (target == "/api/v1/maps") {
-        HandleMapsRequest(
-          std::move(req),
-          std::forward<Send>(send));
-        return;
+    template <typename Body, typename Allocator, typename Send>
+    void operator()(tcp::endpoint, http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+      auto version = req.version();
+      auto keep_alive = req.keep_alive();
+
+      try {
+        if (/*req относится к API?*/) {
+          auto handle = [self = shared_from_this(), send,
+                       req = std::forward<decltype(req)>(req), version, keep_alive] {
+            try {
+              // Этот assert не выстрелит, так как лямбда-функция будет выполняться внутри strand
+              assert(self->api_strand_.running_in_this_thread());
+              return send(self->HandleApiRequest(req));
+            } catch (...) {
+              send(self->ReportServerError(version, keep_alive));
+            }
+          };
+          return net::dispatch(api_strand_, handle);
+        }
+        // Возвращаем результат обработки запроса к файлу
+        return std::visit(
+          [&send](auto&& result) {
+              send(std::forward<decltype(result)>(result));
+          },
+          HandleFileRequest(req));
+      } catch (...) {
+        send(ReportServerError(version, keep_alive));
       }
-      constexpr std::string_view kMapsPrefix = "/api/v1/maps/";
-      if (target.starts_with(kMapsPrefix)) {
-        HandleMapRequest(
-          std::move(req),
-          std::forward<Send>(send));
-        return;
-      }
-      if (target == "/api" || target.starts_with("/api/")) {
-        send(MakeErrorResponse(
-          http::status::bad_request,
-          req.version(),
-          req.keep_alive(),
-          "badRequest",
-          "Bad request"));
-        return;
-      }
-      HandleStaticRequest(
-        std::move(req),
-        std::forward<Send>(send));
     }
 
   private:
     using StringResponse = http::response<http::string_body>;
     using EmptyResponse = http::response<http::empty_body>;
     using FileResponse = http::response<http::file_body>;
+    using FileRequestResult = std::variant<EmptyResponse, StringResponse, FileResponse>;
 
-    model::Game& game_;
+    FileRequestResult HandleFileRequest(const StringRequest& req) const;
+    StringResponse HandleApiRequest(const StringRequest& request) const;
+    StringResponse ReportServerError(unsigned version, bool keep_alive) const;
+
     fs::path static_root_;
+    Strand api_strand_;
 
     static std::string ToLower(std::string value) {
       std::transform(
