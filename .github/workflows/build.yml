@@ -2,40 +2,39 @@ name: Build
 
 on:
   push:
-    branches: [ main, log ]
   pull_request:
-    branches: [ main, log ]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: "3.12"
 
       - name: Install Conan
         run: pip install conan
 
-      - name: Detect Conan profile
+      - name: Create Conan profile
         run: conan profile detect --force
 
-      - name: Cache Conan packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.conan2
-          key: conan-${{ runner.os }}-${{ hashFiles('**/conanfile.txt') }}
-
-      - name: Install dependencies (Conan)
-        run: conan install . --output-folder=build --build=missing -s build_type=Release
+      - name: Install dependencies
+        run: >
+          conan install .
+          --output-folder=build
+          --build=missing
+          -s build_type=Release
 
       - name: Configure CMake
-        run: cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+        run: >
+          cmake -S . -B build
+          -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
+          -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build project
-        run: cmake --build build -j$(nproc)
+      - name: Build
+        run: cmake --build build --config Release --parallel
