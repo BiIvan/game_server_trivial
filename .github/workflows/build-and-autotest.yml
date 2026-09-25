@@ -43,7 +43,6 @@ jobs:
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/python -m pip install \
             pytest \
-            pytest-parallel \
             pytest-xprocess \
             requests \
             jsonschema \
