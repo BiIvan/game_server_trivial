@@ -42,7 +42,12 @@ jobs:
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/python -m pip install \
-            pytest pytest-parallel pytest-xprocess requests jsonschema
+            pytest \
+            pytest-parallel \
+            pytest-xprocess \
+            requests \
+            jsonschema \
+            docker
             
       - name: Build image and run join_game tests
         shell: bash
