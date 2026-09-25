@@ -41,8 +41,13 @@ jobs:
           set -euxo pipefail
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/python -m pip install pytest pytest-parallel requests jsonschema
-
+          .venv/bin/python -m pip install \
+            pytest \
+            pytest-xprocess \
+            requests \
+            jsonschema \
+            docker
+            
       - name: Build image and run join_game tests
         shell: bash
         run: |
