@@ -1,0 +1,57 @@
+name: Build & Autotest
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout project and tests
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Verify layout
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git submodule status
+          test -f Dockerfile
+          test -f data/config.json
+          test -f test_try0/scripts/sprint2/join_game/run.sh
+          test -f test_try0/tests/test_s02_join_game.py
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Create Python environment for tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install pytest pytest-parallel requests jsonschema
+
+      - name: Build image and run join_game tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          bash test_try0/scripts/sprint2/join_game/run.sh
+
+      - name: Upload JUnit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: join-game-results
+          path: join_game.xml
+          if-no-files-found: ignore
