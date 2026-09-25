@@ -18,6 +18,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
+          ssh-key: ${{ secrets.TEST_TRY0_DEPLOY_KEY }}
 
       - name: Verify layout
         shell: bash
