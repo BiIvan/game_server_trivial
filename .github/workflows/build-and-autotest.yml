@@ -64,7 +64,30 @@ jobs:
           set -euxo pipefail
           bash test_try0/scripts/sprint2/join_game/build.sh
 
-      - name: Check server directly
+#      - name: Check server directly
+#        shell: bash
+#        run: |
+#          set -euo pipefail
+#          docker run -d --pull=never \
+#            --name join_game_smoke \
+#            -p 127.0.0.1:18080:8080 \
+#            join_game
+#
+#          trap 'docker logs join_game_smoke 2>&1 || true; docker rm -f join_game_smoke >/dev/null 2>&1 || true' EXIT
+#
+#          docker ps -a --filter name=join_game_smoke
+#
+#          for attempt in {1..20}; do
+#            if curl --noproxy '*' -sS \
+#              -o /tmp/join_game_maps_body \
+#              -w 'HTTP status: %{http_code}\n' \
+#              http://127.0.0.1:18080/api/v1/maps; then
+#              cat /tmp/join_game_maps_body
+#              break
+#            fi
+#            sleep 1
+#          done
+      - name: Diagnose join_game container
         shell: bash
         run: |
           set -euo pipefail
@@ -72,21 +95,20 @@ jobs:
             --name join_game_smoke \
             -p 127.0.0.1:18080:8080 \
             join_game
-
-          trap 'docker logs join_game_smoke 2>&1 || true; docker rm -f join_game_smoke >/dev/null 2>&1 || true' EXIT
-
-          docker ps -a --filter name=join_game_smoke
-
-          for attempt in {1..20}; do
-            if curl --noproxy '*' -sS \
-              -o /tmp/join_game_maps_body \
-              -w 'HTTP status: %{http_code}\n' \
-              http://127.0.0.1:18080/api/v1/maps; then
-              cat /tmp/join_game_maps_body
-              break
-            fi
-            sleep 1
-          done
+          trap 'echo "=== Container logs ==="; docker logs join_game_smoke 2>&1 || true; docker rm -f join_game_smoke >/dev/null 2>&1 || true' EXIT
+          echo "=== Image filesystem ==="
+          docker exec join_game_smoke sh -c '
+            id
+            pwd
+            ls -la /app
+            ls -la /app/data
+            test -f /app/data/config.json
+            echo "--- config.json ---"
+            cat /app/data/config.json
+          '
+          echo "=== Direct GET /api/v1/maps ==="
+          curl --noproxy '*' -sS -i \
+            http://127.0.0.1:18080/api/v1/maps
 
       - name: Run join_game tests
         shell: bash
