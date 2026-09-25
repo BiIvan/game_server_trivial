@@ -43,11 +43,12 @@ jobs:
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/python -m pip install \
             pytest pytest-parallel pytest-xprocess requests jsonschema
-            - name: Build image and run join_game tests
-              shell: bash
-              run: |
-                set -euxo pipefail
-                bash test_try0/scripts/sprint2/join_game/run.sh
+            
+      - name: Build image and run join_game tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          bash test_try0/scripts/sprint2/join_game/run.sh
 
       - name: Upload JUnit results
         if: always()
