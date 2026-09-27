@@ -114,6 +114,26 @@ jobs:
         run: |
           set -euxo pipefail
           bash test_try0/scripts/sprint2/join_game/run.sh
+
+      - name: run game_state tests
+        run: |
+          cd test_try0/scripts/sprint2
+          ./game_state/run.sh
+
+      - name: run tests move_players
+        run: |
+          cd test_try0/scripts/sprint2
+          ./move_players/run.sh
+
+      - name: run tests time_control
+        run: |
+          cd test_try0/scripts/sprint2
+          ./time_control/run.sh
+
+      - name: run tests command_line
+        run: |
+          cd test_try0/scripts/sprint2
+          ./command_line/run.sh
           
       - name: Upload JUnit results
         if: always()
