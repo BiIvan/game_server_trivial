@@ -29,8 +29,7 @@ namespace http_handler {
     const size_t query_position = target.find('?');
     const beast::string_view encoded_path =
       target.substr(0, query_position);
-    const std::optional<std::string> decoded_path =
-      UrlDecode(encoded_path);
+    const std::optional<std::string> decoded_path = UrlDecode(encoded_path);
     if (!decoded_path) {
       return MakeTextResponse(
         http::status::bad_request,
@@ -141,6 +140,9 @@ namespace http_handler {
     if (target == "/api/v1/game/players") {
       return HandlePlayersRequest(request);
     }
+    if (target == "/api/v1/game/state") {
+      return HandleGameStateRequest(request);
+    }
     if (target == "/api/v1/maps") {
      if (request.method() != http::verb::get &&
        request.method() != http::verb::head) {
@@ -223,12 +225,8 @@ namespace http_handler {
     try {
       const json::value request_json = json::parse(request.body());
       const json::object& object = request_json.as_object();
-      const std::string user_name =
-        json::value_to<std::string>(
-          object.at("userName"));
-      const std::string map_id =
-        json::value_to<std::string>(
-          object.at("mapId"));
+      const std::string user_name = json::value_to<std::string>( object.at("userName"));
+      const std::string map_id = json::value_to<std::string>( object.at("mapId"));
       if (user_name.empty()) {
         return MakeErrorResponse(
           http::status::bad_request,
@@ -238,8 +236,7 @@ namespace http_handler {
           "Invalid name");
       }
       try {
-        const app::Application::JoinResult result =
-          app_.JoinGame(
+        const app::Application::JoinResult result = app_.JoinGame(
             model::Map::Id{map_id},
             user_name);
         return MakeJsonResponse(
@@ -295,8 +292,7 @@ namespace http_handler {
       response.set(http::field::allow, "GET, HEAD");
       return response;
     }
-    const std::optional<model::Token> token =
-      ExtractBearerToken(request);
+    const std::optional<model::Token> token = ExtractBearerToken(request);
     if (!token) {
       return MakeErrorResponse(
         http::status::unauthorized,
@@ -305,8 +301,7 @@ namespace http_handler {
         "invalidToken",
         "Authorization header is missing");
     }
-    const model::Player* current_player =
-      app_.FindPlayerByToken(*token);
+    const model::Player* current_player = app_.FindPlayerByToken(*token);
     if (current_player == nullptr) {
       return MakeErrorResponse(
         http::status::unauthorized,
@@ -315,8 +310,7 @@ namespace http_handler {
         "unknownToken",
         "Player token has not been found");
     }
-    const model::GameSession& current_session =
-      current_player->GetSession();
+    const model::GameSession& current_session = current_player->GetSession();
     json::object players_json;
     for (const auto& [player_id, player] : app_.GetPlayers()) {
       if (&player.GetSession() != &current_session) { continue; }
@@ -334,4 +328,88 @@ namespace http_handler {
     }
     return response;
   }
+  
+  namespace {
+
+    std::string_view SerializeDirection(model::Direction direction) noexcept {
+      switch (direction) {
+        case model::Direction::NORTH: return "U";
+        case model::Direction::SOUTH: return "D";
+        case model::Direction::WEST: return "L";
+        case model::Direction::EAST: return "R";
+      }
+      return "U";
+  }
+
+}  // namespace
+  
+  RequestHandler::StringResponse RequestHandler::HandleGameStateRequest(
+    const StringRequest& request) {
+    if (request.method() != http::verb::get &&
+      request.method() != http::verb::head) {
+      auto response = MakeErrorResponse(
+        http::status::method_not_allowed,
+        request.version(),
+        request.keep_alive(),
+        "invalidMethod",
+        "Invalid method");
+      response.set(http::field::allow, "GET, HEAD");
+      return response;
+    }
+    const std::optional<model::Token> token = ExtractBearerToken(request);
+    if (!token) {
+      return MakeErrorResponse(
+        http::status::unauthorized,
+        request.version(),
+        request.keep_alive(),
+        "invalidToken",
+        "Authorization header is required");
+    }
+    const model::Player* current_player = app_.FindPlayerByToken(*token);
+    if (current_player == nullptr) {
+      return MakeErrorResponse(
+        http::status::unauthorized,
+        request.version(),
+        request.keep_alive(),
+        "unknownToken",
+        "Player token has not been found");
+    }
+    const model::GameSession& current_session = current_player->GetSession();
+    json::object players_json;
+    for (const auto& [player_id, player] : app_.GetPlayers()) {
+      if (&player.GetSession() != &current_session) {
+        continue;
+      }
+      const model::Dog& dog = player.GetDog();
+      const model::Position position = dog.GetPosition();
+      const model::Speed speed = dog.GetSpeed();
+      players_json.emplace(
+        std::to_string(*player_id),
+        json::object{
+          {
+            "pos",
+            json::array{position.x, position.y},
+          },
+          {
+            "speed",
+            json::array{speed.x, speed.y},
+          },
+          {
+            "dir",
+            SerializeDirection(dog.GetDirection()),
+          },
+        });
+    }
+    StringResponse response = MakeJsonResponse(
+      http::status::ok,
+      request.version(),
+      request.keep_alive(),
+      json::object{ {"players", std::move(players_json)},});
+    // HEAD возвращает те же заголовки, что GET, но без тела.
+    if (request.method() == http::verb::head) {
+      response.body().clear();
+      response.content_length(0);
+    }
+    return response;
+  } 
 } // namespace http_handler

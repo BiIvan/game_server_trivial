@@ -1,191 +1,235 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
 #include <deque>
-#include <iomanip>
 #include <random>
-#include <sstream>
 #include <string>
+#include <cstdint>
+#include <iomanip>
+#include <sstream>
 #include <unordered_map>
-#include <utility>
 
 #include "model.h"
 #include "tagged.h"
 
 namespace model {
-
-namespace detail {
-
-struct DogTag {};
-struct PlayerTag {};
-struct TokenTag {};
-
-}  // namespace detail
-
-using DogId = util::Tagged<std::uint64_t, detail::DogTag>;
-using PlayerId = util::Tagged<std::uint64_t, detail::PlayerTag>;
-using Token = util::Tagged<std::string, detail::TokenTag>;
-
-class Dog {
-public:
-    Dog(DogId id, std::string name)
-        : id_(id)
-        , name_(std::move(name)) {
-    }
-
-    DogId GetId() const noexcept {
-        return id_;
-    }
-
-    const std::string& GetName() const noexcept {
-        return name_;
-    }
-
-private:
+  
+  namespace detail {
+    struct DogTag {};
+    struct PlayerTag {};
+    struct TokenTag {};
+  } // namespace detail
+  
+  using DogId = util::Tagged<std::uint64_t, detail::DogTag>;
+  using PlayerId = util::Tagged<std::uint64_t, detail::PlayerTag>;
+  using Token = util::Tagged<std::string, detail::TokenTag>;
+  
+  struct Position {
+    double x = 0.0;
+    double y = 0.0;
+  };
+  
+  struct Speed {
+    double x = 0.0;
+    double y = 0.0;
+  };
+  
+  enum class Direction {
+    NORTH,
+    SOUTH,
+    WEST,
+    EAST,
+  };
+  
+  class Dog {
     DogId id_;
     std::string name_;
-};
-
-class GameSession {
-public:
-    explicit GameSession(const Map* map)
-        : map_(map) {
+    Position position_;
+    Speed speed_{0.0, 0.0};
+    Direction direction_ = Direction::NORTH;
+    
+  public:
+    Dog(DogId id, std::string name, Position position) noexcept
+      : id_(id)
+      , name_(std::move(name))
+      , position_(position) {
     }
-
-    const Map& GetMap() const noexcept {
-        return *map_;
+    
+    DogId GetId() const noexcept {
+      return id_;
     }
-
-    Dog& AddDog(std::string name) {
-        const DogId id{next_dog_id_++};
-        return dogs_.emplace_back(id, std::move(name));
+    
+    const std::string& GetName() const noexcept {
+      return name_;
     }
-
-    const std::deque<Dog>& GetDogs() const noexcept {
-        return dogs_;
+    
+    Position GetPosition() const noexcept {
+      return position_;
     }
-
-private:
+    
+    Speed GetSpeed() const noexcept {
+      return speed_;
+    }
+    
+    Direction GetDirection() const noexcept {
+      return direction_;
+    }
+  };
+  
+  class GameSession {
+    Position GenerateRandomPositionOnRoad() {
+      const auto& roads = map_->GetRoads();
+      // По условиям игровая карта для входа должна иметь хотя бы одну дорогу.
+      // Защита нужна, чтобы не допустить неопределённого поведения.
+      if (roads.empty()) {
+        return {};
+      }
+      std::uniform_int_distribution<size_t> road_distribution(
+        0, roads.size() - 1);
+      const Road& road = roads[road_distribution(random_generator_)];
+      const Point start = road.GetStart();
+      const Point end = road.GetEnd();
+      if (road.IsHorizontal()) {
+        const int min_x = std::min(start.x, end.x);
+        const int max_x = std::max(start.x, end.x);
+        std::uniform_real_distribution<double> x_distribution(
+          static_cast<double>(min_x),
+          static_cast<double>(max_x));
+        return {
+          x_distribution(random_generator_),
+          static_cast<double>(start.y),
+        };
+      }
+      const int min_y = std::min(start.y, end.y);
+      const int max_y = std::max(start.y, end.y);
+      std::uniform_real_distribution<double> y_distribution(
+        static_cast<double>(min_y),
+        static_cast<double>(max_y));
+      return {
+        static_cast<double>(start.x),
+        y_distribution(random_generator_),
+      };
+    }
+    
     const Map* map_;
     std::uint64_t next_dog_id_ = 0;
-
-    // deque нужен, чтобы адреса Dog не менялись при добавлении новых собак.
-    // Player хранит Dog*, поэтому vector здесь использовать опасно.
+    std::mt19937 random_generator_;
+    // deque сохраняет адреса объектов Dog при добавлении новых собак.
     std::deque<Dog> dogs_;
-};
-
-class Player {
-public:
-    Player(PlayerId id, GameSession& session, Dog& dog) noexcept
-        : id_(id)
-        , session_(&session)
-        , dog_(&dog) {
+    
+  public:
+    explicit GameSession(const Map* map)
+      : map_(map)
+      , random_generator_(std::random_device{}()) {
     }
-
-    PlayerId GetId() const noexcept {
-        return id_;
+    
+    const Map& GetMap() const noexcept {
+      return *map_;
     }
-
-    const GameSession& GetSession() const noexcept {
-        return *session_;
+    
+    Dog& AddDog(std::string name) {
+      const DogId id{next_dog_id_++};
+      return dogs_.emplace_back(
+        id,
+        std::move(name),
+        GenerateRandomPositionOnRoad());
     }
-
-    const Dog& GetDog() const noexcept {
-        return *dog_;
+    
+    const std::deque<Dog>& GetDogs() const noexcept {
+      return dogs_;
     }
-
-private:
+  };
+  
+  class Player {
     PlayerId id_;
     GameSession* session_;
     Dog* dog_;
-};
-
-class Players {
-public:
-    Player& Add(Dog& dog, GameSession& session) {
-        const PlayerId id{next_player_id_++};
-
-        auto [it, inserted] = players_.emplace(
-            id,
-            Player{id, session, dog});
-
-        return it->second;
+    
+  public:
+    Player(PlayerId id, GameSession& session, Dog& dog) noexcept
+      : id_(id)
+      , session_(&session)
+      , dog_(&dog) {
     }
-
-    Player* FindById(PlayerId id) noexcept {
-        if (auto it = players_.find(id); it != players_.end()) {
-            return &it->second;
-        }
-        return nullptr;
+    
+    PlayerId GetId() const noexcept {
+      return id_;
     }
-
-    auto begin() const noexcept {
-        return players_.begin();
+    
+    const GameSession& GetSession() const noexcept {
+      return *session_;
     }
-
-    auto end() const noexcept {
-        return players_.end();
+    
+    const Dog& GetDog() const noexcept {
+      return *dog_;
     }
-
-private:
+  };
+  
+  class Players {
     std::uint64_t next_player_id_ = 0;
-
-    // Указатели на элементы unordered_map не инвалидируются при rehash.
-    // Это важно, поскольку PlayerTokens хранит Player*.
-    std::unordered_map<
-        PlayerId,
-        Player,
-        util::TaggedHasher<PlayerId>> players_;
-};
-
-class PlayerTokens {
-public:
-    PlayerTokens()
-        : generator_(std::random_device{}()) {
+    std::unordered_map<PlayerId, Player, util::TaggedHasher<PlayerId>> players_;
+    
+  public:
+    Player& Add(Dog& dog, GameSession& session) {
+      const PlayerId id{next_player_id_++};
+      auto [it, inserted] = players_.emplace(
+        id,
+        Player{id, session, dog});
+      return it->second;
     }
-
-    Token AddPlayer(Player& player) {
-        Token token{std::string{}};
-
-        do {
-            token = Token{GenerateToken()};
-        } while (token_to_player_.contains(token));
-
-        token_to_player_.emplace(token, &player);
-        return token;
+    
+    Player* FindById(PlayerId id) noexcept {
+      if (auto it = players_.find(id); it != players_.end()) {
+        return &it->second;
+      }
+      return nullptr;
     }
-
-    Player* FindPlayerByToken(const Token& token) const noexcept {
-        if (auto it = token_to_player_.find(token);
-            it != token_to_player_.end()) {
-            return it->second;
-        }
-
-        return nullptr;
+    
+    auto begin() const noexcept {
+      return players_.begin();
     }
-
-private:
+    
+    auto end() const noexcept {
+      return players_.end();
+    }
+  };
+  
+  class PlayerTokens {
     std::string GenerateToken() {
-        const std::array<std::uint64_t, 2> values{
-            generator_(),
-            generator_()
-        };
-
-        std::ostringstream output;
-        output << std::hex << std::setfill('0')
-               << std::setw(16) << values[0]
-               << std::setw(16) << values[1];
-
-        return output.str();
+      const std::array values{
+        generator_(),
+        generator_()
+      };
+      std::ostringstream output;
+      output << std::hex << std::setfill('0')
+          << std::setw(16) << values[0]
+          << std::setw(16) << values[1];
+      return output.str();
     }
-
+    
     std::mt19937_64 generator_;
-
-    std::unordered_map<
-        Token,
-        Player*,
-        util::TaggedHasher<Token>> token_to_player_;
-};
-
-}  // namespace model
+    std::unordered_map<Token, Player*, util::TaggedHasher<Token>> token_to_player_;
+    
+  public:
+    PlayerTokens()
+      : generator_(std::random_device{}()) {
+    }
+    
+    Token AddPlayer(Player& player) {
+      Token token{std::string{}};
+      do {
+        token = Token{GenerateToken()};
+      } while (token_to_player_.contains(token));
+      token_to_player_.emplace(token, &player);
+      return token;
+    }
+    
+    Player* FindPlayerByToken(const Token& token) const noexcept {
+      if (auto it = token_to_player_.find(token);
+        it != token_to_player_.end()) {
+        return it->second;
+      }
+      return nullptr;
+    }
+  };
+} // namespace model
