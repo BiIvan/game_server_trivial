@@ -46,6 +46,7 @@ namespace http_handler {
     StringResponse HandleApiRequest( const StringRequest& request);
     StringResponse HandleJoinGameRequest( const StringRequest& request);
     StringResponse HandlePlayersRequest( const StringRequest& request);
+    StringResponse HandleGameStateRequest(const StringRequest& request);
     StringResponse ReportServerError( unsigned version, bool keep_alive) const;
     
     model::Game& game_;
