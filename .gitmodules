@@ -1,0 +1,4 @@
+[submodule "test_try0"]
+	path = test_try0
+	url = git@github.com:BiIvan/test_try0.git
+	branch = main
