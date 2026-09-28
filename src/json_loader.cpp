@@ -49,9 +49,18 @@ namespace json_loader {
       };
     }
 
-    model::Map ParseMap(const json::object& map_json) {
+    model::Map ParseMap(
+      const json::object& map_json,
+      double default_dog_speed) {
+      const json::value* configured_speed = map_json.if_contains("dogSpeed");
+      const double dog_speed = configured_speed
+        ? json::value_to<double>(*configured_speed)
+        : default_dog_speed;
       model::Map map{
-        model::Map::Id{GetString(map_json, "id")},GetString(map_json, "name")};
+        model::Map::Id{GetString(map_json, "id")},
+        GetString(map_json, "name"),
+        dog_speed
+      };
       for (const json::value& value : map_json.at("roads").as_array()) {
         map.AddRoad(ParseRoad(value.as_object()));
       }
@@ -75,9 +84,13 @@ namespace json_loader {
     buffer << input.rdbuf();
     const json::value root_value = json::parse(buffer.str());
     const json::object& root = root_value.as_object();
+    double default_dog_speed = 1.0;
+    if (const json::value* value = root.if_contains("defaultDogSpeed")) {
+      default_dog_speed = json::value_to<double>(*value);
+    }
     model::Game game;
     for (const json::value& value : root.at("maps").as_array()) {
-      game.AddMap(ParseMap(value.as_object()));
+      game.AddMap(ParseMap(value.as_object(), default_dog_speed));
     }
     return game;
   }

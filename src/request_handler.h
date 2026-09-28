@@ -46,6 +46,7 @@ namespace http_handler {
     StringResponse HandleGameStateRequest(const StringRequest& request);
     StringResponse ReportServerError( unsigned version, bool keep_alive) const;
     StringResponse HandlePlayerActionRequest( const StringRequest& request);
+    StringResponse HandleTickRequest(const StringRequest& request);
     
     model::Game& game_;
     app::Application app_;
@@ -322,11 +323,12 @@ namespace http_handler {
               fs::weakly_canonical(fs::absolute(std::move(static_root)))}
         , api_strand_(std::move(api_strand)) {
     }
+    
     RequestHandler(const RequestHandler&) = delete;
     RequestHandler& operator=(const RequestHandler&) = delete;
+    
     template <typename Body, typename Allocator, typename Send>
-    void operator()(
-        http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
+    void operator()( http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
         const unsigned version = req.version();
         const bool keep_alive = req.keep_alive();
         try {
