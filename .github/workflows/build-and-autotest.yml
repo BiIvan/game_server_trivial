@@ -120,6 +120,7 @@ jobs:
           set -euxo pipefail
           bash test_try0/scripts/sprint2/game_state/run.sh
 
+
       - name: run tests move_players
         run: |
           cd test_try0/scripts/sprint2
