@@ -40,6 +40,7 @@ add_executable(game_server
 target_link_libraries(game_server PRIVATE
     Boost::log_setup
     Boost::log
+    Boost::program_options
     Threads::Threads
 )
 
