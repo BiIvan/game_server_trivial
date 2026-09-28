@@ -48,11 +48,6 @@ namespace http_handler {
     StringResponse HandlePlayerActionRequest( const StringRequest& request);
     StringResponse HandleTickRequest(const StringRequest& request);
     
-    model::Game& game_;
-    app::Application app_;
-    fs::path static_root_;
-    Strand api_strand_;
-    
     template <typename Body, typename Allocator>
     static bool IsApiRequest(
       const http::request<Body, http::basic_fields<Allocator>>& request) {
@@ -312,20 +307,32 @@ namespace http_handler {
           SerializeMap(map));
     }
       
+    model::Game& game_;
+    app::Application app_;
+    fs::path static_root_;
+    Strand api_strand_;
+    bool automatic_tick_ = false;
+    
   public:
-    explicit RequestHandler(
-        model::Game& game,
-        fs::path static_root,
-        Strand api_strand)
-        : game_(game)
-        , app_(game_)
-        , static_root_{
-              fs::weakly_canonical(fs::absolute(std::move(static_root)))}
-        , api_strand_(std::move(api_strand)) {
+    RequestHandler(
+      model::Game& game,
+      fs::path static_root,
+      Strand api_strand,
+      bool randomize_spawn_points,
+      bool automatic_tick)
+      : game_(game)
+      , app_(game_, randomize_spawn_points)
+      , static_root_{ fs::weakly_canonical( fs::absolute(std::move(static_root)))}
+      , api_strand_(std::move(api_strand))
+      , automatic_tick_(automatic_tick) {
     }
     
     RequestHandler(const RequestHandler&) = delete;
     RequestHandler& operator=(const RequestHandler&) = delete;
+    
+    app::Application& GetApplication() noexcept {
+      return app_;
+    }
     
     template <typename Body, typename Allocator, typename Send>
     void operator()( http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {

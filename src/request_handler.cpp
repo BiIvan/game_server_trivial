@@ -159,7 +159,7 @@ namespace http_handler {
     if (target == "/api/v1/game/player/action") {
       return HandlePlayerActionRequest(request);
     }
-    if (target == "/api/v1/game/tick") {
+    if (target == "/api/v1/game/tick" && !automatic_tick_) {
       return HandleTickRequest(request);
     }
     if (target == "/api/v1/maps") {

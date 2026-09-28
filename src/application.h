@@ -1,10 +1,11 @@
 #pragma once
 
 #include <memory>
-#include <stdexcept>
 #include <string>
-#include <unordered_map>
+#include <cstdint>
 #include <utility>
+#include <stdexcept>
+#include <unordered_map>
 
 #include "model.h"
 #include "player.h"
@@ -17,7 +18,9 @@ namespace app {
       if (auto it = sessions_.find(map_id); it != sessions_.end()) {
         return *it->second;
       }
-      auto session = std::make_unique<model::GameSession>(&map);
+      auto session = std::make_unique<model::GameSession>(
+        &map,
+        randomize_spawn_points_);
       model::GameSession* result = session.get();
       sessions_.emplace(map_id, std::move(session));
       return *result;
@@ -26,19 +29,22 @@ namespace app {
     model::Game& game_;
     model::Players players_;
     model::PlayerTokens tokens_;
+    bool randomize_spawn_points_ = false;
     std::unordered_map<std::string,std::unique_ptr<model::GameSession>> sessions_;
     
   public:
+    explicit Application(
+      model::Game& game,
+      bool randomize_spawn_points)
+      : game_(game)
+      , randomize_spawn_points_(randomize_spawn_points) {
+    }
     void Tick(std::int64_t delta_ms) {
       const double delta_seconds =
         static_cast<double>(delta_ms) / 1000.0;
       for (auto& [map_id, session] : sessions_) {
         session->Tick(delta_seconds);
       }
-    }
-
-    explicit Application(model::Game& game)
-      : game_(game) {
     }
 
     struct JoinResult {

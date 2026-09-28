@@ -111,11 +111,6 @@ namespace model {
   class GameSession {
     Position GenerateRandomPositionOnRoad() {
       const auto& roads = map_->GetRoads();
-      // По условиям игровая карта для входа должна иметь хотя бы одну дорогу.
-      // Защита нужна, чтобы не допустить неопределённого поведения.
-      //if (roads.empty()) {
-      //  return {};
-      //}
       if (roads.empty()) {
         throw std::logic_error("Cannot add dog to a map without roads");
       }
@@ -230,19 +225,15 @@ namespace model {
     }
 
     const Map* map_;
+    bool randomize_spawn_points_ = false;
     std::uint64_t next_dog_id_ = 0;
     std::mt19937 random_generator_;
     std::deque<Dog> dogs_;
     
   public:
-    void Tick(double delta_seconds) {
-      for (Dog& dog : dogs_) {
-        MoveDog(dog, delta_seconds);
-      }
-    }
-  
-    explicit GameSession(const Map* map)
+    GameSession(const Map* map, bool randomize_spawn_points)
       : map_(map)
+      , randomize_spawn_points_(randomize_spawn_points)
       , random_generator_(std::random_device{}()) {
     }
     
@@ -250,21 +241,30 @@ namespace model {
       return *map_;
     }
     
+    void Tick(double delta_seconds) {
+      for (Dog& dog : dogs_) {
+        MoveDog(dog, delta_seconds);
+      }
+    }
+    
     Dog& AddDog(std::string name) {
       const auto& roads = map_->GetRoads();
       if (roads.empty()) {
-        throw std::logic_error("Cannot add dog to a map without roads");
+        throw std::logic_error( "Cannot add dog to a map without roads");
       }
-      const Point start = roads.front().GetStart();
-      const DogId id{next_dog_id_++};
-      return dogs_.emplace_back(
-        id,
-        std::move(name),
-        Position{
+      Position position;
+      if (randomize_spawn_points_) {
+        position = GenerateRandomPositionOnRoad();
+      } else {
+        const Point start = roads.front().GetStart();
+        position = {
           static_cast<double>(start.x),
           static_cast<double>(start.y)
-        });
-    }    
+        };
+      }
+      const DogId id{next_dog_id_++};
+      return dogs_.emplace_back(id, std::move(name), position);
+    }
     
     const std::deque<Dog>& GetDogs() const noexcept {
       return dogs_;

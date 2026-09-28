@@ -63,4 +63,4 @@ WORKDIR /app
 
 EXPOSE 8080
 
-ENTRYPOINT ["/app/game_server", "/app/data/config.json"]
+ENTRYPOINT ["/app/game_server", "-c", "/app/data/config.json", "-w", "/app/static"]
