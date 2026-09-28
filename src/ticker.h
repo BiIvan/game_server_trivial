@@ -15,10 +15,6 @@
 
 #include "logger.h"
 
-using Clock = std::chrono::steady_clock;
-using Strand = net::strand<net::io_context::executor_type>;
-using Handler = std::function<void(std::chrono::milliseconds)>;
-  
 namespace net = boost::asio;
 
 class Ticker : public std::enable_shared_from_this<Ticker> {
