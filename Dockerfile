@@ -28,7 +28,7 @@ COPY CMakeLists.txt ./
 # Conan ставит зависимости. Если conanfile.txt не менялся — слой берётся из кэша.
 #RUN mkdir -p build && cd build && conan install .. --build=missing
 RUN mkdir -p build && cd build && conan install .. --build=missing && \
-    echo "=== Boost targets ===" && grep -R "add_library(Boost::" -n . || true
+    echo "=== Boost targets ===" && ( grep -R "add_library(Boost::" -n . || true )
 
 # --- Только теперь копируем исходники ---
 COPY ./src ./src/

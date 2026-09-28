@@ -4,6 +4,19 @@
 
 #include "request_handler.h"
 
+namespace {
+
+  const char* DirectionToString(model::Direction direction) noexcept {
+    switch (direction) {
+      case model::Direction::NORTH: return "U";
+      case model::Direction::SOUTH: return "D";
+      case model::Direction::WEST:  return "L";
+      case model::Direction::EAST:  return "R";
+    }
+    return "U";
+  }
+}  // namespace
+
 namespace http_handler {
   
   RequestHandler::FileRequestResult RequestHandler::HandleFileRequest(
@@ -142,6 +155,9 @@ namespace http_handler {
     }
     if (target == "/api/v1/game/state") {
       return HandleGameStateRequest(request);
+    }
+    if (target == "/api/v1/game/player/action") {
+      return HandlePlayerActionRequest(request);
     }
     if (target == "/api/v1/maps") {
      if (request.method() != http::verb::get &&
@@ -343,7 +359,7 @@ namespace http_handler {
 
 }  // namespace
   
-  RequestHandler::StringResponse RequestHandler::HandleGameStateRequest(
+/*  RequestHandler::StringResponse RequestHandler::HandleGameStateRequest(
     const StringRequest& request) {
     if (request.method() != http::verb::get &&
       request.method() != http::verb::head) {
@@ -411,5 +427,118 @@ namespace http_handler {
       response.content_length(0);
     }
     return response;
-  } 
+  } */
+  
+  RequestHandler::StringResponse RequestHandler::HandleGameStateRequest(
+    const StringRequest& request) {
+    if (request.method() != http::verb::get &&
+      request.method() != http::verb::head) {
+      auto response = MakeErrorResponse(
+        http::status::method_not_allowed,
+        request.version(),
+        request.keep_alive(),
+        "invalidMethod",
+        "Invalid method");
+      response.set(http::field::allow, "GET, HEAD");
+      return response;
+    }
+    return ExecuteAuthorized(
+      request,
+      [this, &request](model::Player& current_player) {
+        json::object players_json;
+        const auto& session = current_player.GetSession();
+        for (const auto& [id, player] : app_.GetPlayers()) {
+          if (&player.GetSession() != &session) {
+            continue;
+          }
+          const model::Dog& dog = player.GetDog();
+          const auto pos = dog.GetPosition();
+          const auto speed = dog.GetSpeed();
+          players_json.emplace(
+            std::to_string(*id),
+            json::object{
+              {"pos", json::array{pos.x, pos.y}},
+              {"speed", json::array{speed.x, speed.y}},
+              {"dir", DirectionToString(dog.GetDirection())}
+            });
+        }
+        auto response = MakeJsonResponse(
+          http::status::ok,
+          request.version(),
+          request.keep_alive(),
+          json::object{{"players", std::move(players_json)}});
+        if (request.method() == http::verb::head) {
+          response.body().clear();
+          response.content_length(0);
+        }
+        return response;
+      }
+    );
+  }
+  
+  RequestHandler::StringResponse RequestHandler::HandlePlayerActionRequest(
+    const StringRequest& request) {
+    if (request.method() != http::verb::post) {
+      auto response = MakeErrorResponse(
+        http::status::method_not_allowed,
+        request.version(),
+        request.keep_alive(),
+        "invalidMethod",
+        "Invalid method");
+      response.set(http::field::allow, "POST");
+      return response;
+    }
+    return ExecuteAuthorized(
+      request,
+      [this, &request](model::Player& player) {
+        if (!IsJsonContentType(request)) {
+          return MakeErrorResponse(
+            http::status::bad_request,
+            request.version(),
+            request.keep_alive(),
+            "invalidArgument",
+            "Expected application/json");
+        }
+        std::string move;
+        try {
+          const json::value body = json::parse(request.body());
+          move = json::value_to<std::string>(
+            body.as_object().at("move"));
+        } catch (const std::exception&) {
+          return MakeErrorResponse(
+            http::status::bad_request,
+            request.version(),
+            request.keep_alive(),
+            "invalidArgument",
+            "Invalid action");
+        }
+        model::Dog& dog = player.GetDog();
+        // Замените на скорость из вашей конфигурации игры/карты.
+        const double dog_speed = 1.0;
+        if (move == "L") {
+          dog.SetMove(model::Direction::WEST, dog_speed);
+        } else if (move == "R") {
+          dog.SetMove(model::Direction::EAST, dog_speed);
+        } else if (move == "U") {
+          dog.SetMove(model::Direction::NORTH, dog_speed);
+        } else if (move == "D") {
+          dog.SetMove(model::Direction::SOUTH, dog_speed);
+        } else if (move.empty()) {
+          dog.Stop();
+        } else {
+          return MakeErrorResponse(
+            http::status::bad_request,
+            request.version(),
+            request.keep_alive(),
+            "invalidArgument",
+            "Unknown movement direction");
+        }
+        return MakeJsonResponse(
+          http::status::ok,
+          request.version(),
+          request.keep_alive(),
+          json::object{});
+      }
+    );
+  }  
 } // namespace http_handler

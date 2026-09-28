@@ -74,6 +74,28 @@ namespace model {
     Direction GetDirection() const noexcept {
       return direction_;
     }
+    
+    void SetMove(Direction direction, double dog_speed) noexcept {
+      direction_ = direction;
+      switch (direction) {
+        case Direction::NORTH:
+          speed_ = {0.0, -dog_speed};
+          break;
+        case Direction::SOUTH:
+          speed_ = {0.0, dog_speed};
+          break;
+        case Direction::WEST:
+          speed_ = {-dog_speed, 0.0};
+          break;
+        case Direction::EAST:
+          speed_ = {dog_speed, 0.0};
+          break;
+      }
+    }
+
+    void Stop() noexcept {
+      speed_ = {0.0, 0.0};
+    }    
   };
   
   class GameSession {
@@ -158,6 +180,10 @@ namespace model {
     
     const GameSession& GetSession() const noexcept {
       return *session_;
+    }
+    
+    Dog& GetDog() noexcept {
+      return *dog_;
     }
     
     const Dog& GetDog() const noexcept {
