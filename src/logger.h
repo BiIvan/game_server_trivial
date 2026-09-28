@@ -64,7 +64,7 @@ namespace logger {
           data_value && data_value.get().is_object()
             ? data_value.get()
             : json::value{json::object{}};
-        stream << json::serialize(log_record);
+        stream << json::serialize(log_record) << "\n";
       });
       logging::core::get()->add_sink(sink);
       return true;

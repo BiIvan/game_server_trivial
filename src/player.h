@@ -4,9 +4,12 @@
 #include <deque>
 #include <random>
 #include <string>
+#include <cstddef>
 #include <cstdint>
 #include <iomanip>
 #include <sstream>
+#include <utility>
+#include <algorithm>
 #include <unordered_map>
 
 #include "model.h"
@@ -74,6 +77,28 @@ namespace model {
     Direction GetDirection() const noexcept {
       return direction_;
     }
+    
+    void SetMove(Direction direction, double dog_speed) noexcept {
+      direction_ = direction;
+      switch (direction) {
+        case Direction::NORTH:
+          speed_ = {0.0, -dog_speed};
+          break;
+        case Direction::SOUTH:
+          speed_ = {0.0, dog_speed};
+          break;
+        case Direction::WEST:
+          speed_ = {-dog_speed, 0.0};
+          break;
+        case Direction::EAST:
+          speed_ = {dog_speed, 0.0};
+          break;
+      }
+    }
+
+    void Stop() noexcept {
+      speed_ = {0.0, 0.0};
+    }    
   };
   
   class GameSession {
@@ -81,11 +106,13 @@ namespace model {
       const auto& roads = map_->GetRoads();
       // По условиям игровая карта для входа должна иметь хотя бы одну дорогу.
       // Защита нужна, чтобы не допустить неопределённого поведения.
+      //if (roads.empty()) {
+      //  return {};
+      //}
       if (roads.empty()) {
-        return {};
+        throw std::logic_error("Cannot add dog to a map without roads");
       }
-      std::uniform_int_distribution<size_t> road_distribution(
-        0, roads.size() - 1);
+      std::uniform_int_distribution<size_t> road_distribution( 0, roads.size() - 1);
       const Road& road = roads[road_distribution(random_generator_)];
       const Point start = road.GetStart();
       const Point end = road.GetEnd();
@@ -102,13 +129,8 @@ namespace model {
       }
       const int min_y = std::min(start.y, end.y);
       const int max_y = std::max(start.y, end.y);
-      std::uniform_real_distribution<double> y_distribution(
-        static_cast<double>(min_y),
-        static_cast<double>(max_y));
-      return {
-        static_cast<double>(start.x),
-        y_distribution(random_generator_),
-      };
+      std::uniform_real_distribution<double> y_distribution( static_cast<double>(min_y), static_cast<double>(max_y));
+      return { static_cast<double>(start.x), y_distribution(random_generator_), };
     }
     
     const Map* map_;
@@ -158,6 +180,10 @@ namespace model {
     
     const GameSession& GetSession() const noexcept {
       return *session_;
+    }
+    
+    Dog& GetDog() noexcept {
+      return *dog_;
     }
     
     const Dog& GetDog() const noexcept {

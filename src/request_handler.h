@@ -37,17 +37,15 @@ namespace http_handler {
     using StringResponse = http::response<http::string_body>;
     using EmptyResponse = http::response<http::empty_body>;
     using FileResponse = http::response<http::file_body>;
-    using FileRequestResult = std::variant<
-      StringResponse,
-      EmptyResponse,
-      FileResponse>;
-      
+    using FileRequestResult = std::variant< StringResponse, EmptyResponse, FileResponse>;
+
     FileRequestResult HandleFileRequest( const StringRequest& req) const;
     StringResponse HandleApiRequest( const StringRequest& request);
     StringResponse HandleJoinGameRequest( const StringRequest& request);
     StringResponse HandlePlayersRequest( const StringRequest& request);
     StringResponse HandleGameStateRequest(const StringRequest& request);
     StringResponse ReportServerError( unsigned version, bool keep_alive) const;
+    StringResponse HandlePlayerActionRequest( const StringRequest& request);
     
     model::Game& game_;
     app::Application app_;
@@ -201,8 +199,31 @@ namespace http_handler {
       return beast::iequals(media_type, "application/json");
     }
     
-    static std::optional<model::Token> ExtractBearerToken(
-      const StringRequest& request);
+    static std::optional<model::Token> ExtractBearerToken( const StringRequest& request);
+
+    template <typename Fn>
+    StringResponse ExecuteAuthorized( const StringRequest& request, Fn&& action) {
+      const auto token = ExtractBearerToken(request);
+      if (!token) {
+        return MakeErrorResponse(
+          http::status::unauthorized,
+          request.version(),
+          request.keep_alive(),
+          "invalidToken",
+          "Authorization header is required");
+      }
+      model::Player* player = app_.FindPlayerByToken(*token);
+      if (player == nullptr) {
+        return MakeErrorResponse(
+          http::status::unauthorized,
+          request.version(),
+          request.keep_alive(),
+          "unknownToken",
+          "Player token has not been found");
+      }
+      return std::forward<Fn>(action)(*player);
+    }
+      
     static json::object SerializeRoad(const model::Road& road) {
       const model::Point start = road.GetStart();
       const model::Point end = road.GetEnd();
