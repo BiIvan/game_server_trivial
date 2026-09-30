@@ -2,6 +2,7 @@
 #include <string>
 #include <string_view>
 
+#include "literals.h"
 #include "request_handler.h"
 
 namespace {
@@ -19,50 +20,30 @@ namespace {
 
 namespace http_handler {
   
-  RequestHandler::FileRequestResult RequestHandler::HandleFileRequest(
-    const StringRequest& req) const {
-    if (req.method() != http::verb::get &&
-      req.method() != http::verb::head) {
-      auto response = MakeTextResponse(
-        http::status::method_not_allowed,
-        req.version(),
-        req.keep_alive(),
-        "Only GET and HEAD methods are supported\n");
+  RequestHandler::FileRequestResult RequestHandler::HandleFileRequest( const StringRequest& req) const {
+    if (req.method() != http::verb::get && req.method() != http::verb::head) {
+      auto response = MakeTextResponse( http::status::method_not_allowed, req.version(), req.keep_alive(), std::string{ NEED});
       response.set(http::field::allow, "GET, HEAD");
       return response;
     }
     const beast::string_view target = req.target();
     if (target.empty() || target.front() != '/') {
-      return MakeTextResponse(
-        http::status::bad_request,
-        req.version(),
-        req.keep_alive(),
-        "Invalid request target\n");
+      return MakeTextResponse( http::status::bad_request, req.version(), req.keep_alive(), std::string{ INVRQT});
     }
     const size_t query_position = target.find('?');
-    const beast::string_view encoded_path =
-      target.substr(0, query_position);
+    const beast::string_view encoded_path = target.substr(0, query_position);
     const std::optional<std::string> decoded_path = UrlDecode(encoded_path);
     if (!decoded_path) {
-      return MakeTextResponse(
-        http::status::bad_request,
-        req.version(),
-        req.keep_alive(),
-        "Invalid URL encoding\n");
+      return MakeTextResponse( http::status::bad_request, req.version(), req.keep_alive(), std::string{ INVURL});
     }
     std::string relative_path = *decoded_path;
     if (relative_path == "/") {
       relative_path = "/index.html";
     }
     relative_path.erase(0, 1);
-    fs::path requested_path =
-      fs::weakly_canonical(static_root_ / relative_path);
+    fs::path requested_path = fs::weakly_canonical(static_root_ / relative_path);
     if (!IsSubPath(requested_path, static_root_)) {
-      return MakeTextResponse(
-        http::status::bad_request,
-        req.version(),
-        req.keep_alive(),
-        "Requested path is outside static directory\n");
+      return MakeTextResponse( http::status::bad_request, req.version(), req.keep_alive(), std::string{ NOSTATIC});
     }
     boost::system::error_code ec;
     if (fs::is_directory(requested_path, ec)) {
@@ -70,176 +51,80 @@ namespace http_handler {
       requested_path = fs::weakly_canonical(requested_path);
     }
     if (ec) {
-      return MakeTextResponse(
-        http::status::not_found,
-        req.version(),
-        req.keep_alive(),
-        "File not found\n");
+      return MakeTextResponse( http::status::not_found, req.version(), req.keep_alive(), std::string{ Err2});
     }
     if (!IsSubPath(requested_path, static_root_)) {
-      return MakeTextResponse(
-        http::status::bad_request,
-        req.version(),
-        req.keep_alive(),
-        "Requested path is outside static directory\n");
+      return MakeTextResponse( http::status::bad_request, req.version(), req.keep_alive(), std::string{ NOSTATIC});
     }
     http::file_body::value_type file;
-    file.open(
-      requested_path.string().c_str(),
-      beast::file_mode::read,
-      ec);
+    file.open( requested_path.string().c_str(), beast::file_mode::read, ec);
     if (ec == beast::errc::no_such_file_or_directory) {
-      return MakeTextResponse(
-        http::status::not_found,
-        req.version(),
-        req.keep_alive(),
-        "File not found\n");
+      return MakeTextResponse( http::status::not_found, req.version(), req.keep_alive(), std::string{ Err2});
     }
     if (ec) {
-      return MakeTextResponse(
-        http::status::internal_server_error,
-        req.version(),
-        req.keep_alive(),
-        "Failed to open file\n");
+      return MakeTextResponse( http::status::internal_server_error, req.version(), req.keep_alive(), std::string{ OPNF});
     }
     const auto file_size = file.size();
     if (req.method() == http::verb::head) {
-      EmptyResponse response{
-        http::status::ok,
-        req.version()
-      };
-      response.set(
-        http::field::content_type,
-        GetMimeType(requested_path));
+      EmptyResponse response{ http::status::ok, req.version()};
+      response.set( http::field::content_type, GetMimeType(requested_path));
       response.content_length(file_size);
       response.keep_alive(req.keep_alive());
       return response;
     }
-    FileResponse response{
-      std::piecewise_construct,
-      std::make_tuple(std::move(file)),
-      std::make_tuple(
-        http::status::ok,
-        req.version())
-    };
-    response.set(
-      http::field::content_type,
-      GetMimeType(requested_path));
+    FileResponse response{ std::piecewise_construct, std::make_tuple(std::move(file)),
+      std::make_tuple( http::status::ok, req.version())};
+    response.set( http::field::content_type, GetMimeType(requested_path)); 
     response.content_length(file_size);
     response.keep_alive(req.keep_alive());
     return response;
   }
   
-  RequestHandler::StringResponse RequestHandler::ReportServerError(
-    unsigned version,
-    bool keep_alive) const {
-    return MakeErrorResponse(
-      http::status::internal_server_error,
-      version,
-      keep_alive,
-      "internalError",
-      "Internal server error");
+  RequestHandler::StringResponse RequestHandler::ReportServerError( unsigned version, bool keep_alive) const {
+    return MakeErrorResponse( http::status::internal_server_error, version, keep_alive, std::string{ INTERR}, std::string{ SRVERR});
   }
   
-  RequestHandler::StringResponse RequestHandler::HandleApiRequest(
-    const StringRequest& request) {
-    const std::string_view target{
-      request.target().data(),
-      request.target().size()
-    };
-    if (target == "/api/v1/game/join") {
-      return HandleJoinGameRequest(request);
-    }
-    if (target == "/api/v1/game/players") {
-      return HandlePlayersRequest(request);
-    }
-    if (target == "/api/v1/game/state") {
-      return HandleGameStateRequest(request);
-    }
-    if (target == "/api/v1/game/player/action") {
-      return HandlePlayerActionRequest(request);
-    }
-    if (target == "/api/v1/game/tick" && !automatic_tick_) {
-      return HandleTickRequest(request);
-    }
+  RequestHandler::StringResponse RequestHandler::HandleApiRequest( const StringRequest& request) {
+    const std::string_view target{ request.target().data(), request.target().size() };
+    if (target == "/api/v1/game/join") { return HandleJoinGameRequest(request); }
+    if (target == "/api/v1/game/players") { return HandlePlayersRequest(request); }
+    if (target == "/api/v1/game/state") { return HandleGameStateRequest(request); }
+    if (target == "/api/v1/game/player/action") { return HandlePlayerActionRequest(request); }
+    if (target == "/api/v1/game/tick" && !automatic_tick_) { return HandleTickRequest(request); }
     if (target == "/api/v1/maps") {
-     if (request.method() != http::verb::get &&
-       request.method() != http::verb::head) {
-      return MakeErrorResponse(
-       http::status::bad_request,
-       request.version(),
-       request.keep_alive(),
-       "badRequest",
-       "Bad request");
+     if (request.method() != http::verb::get && request.method() != http::verb::head) {
+      return MakeErrorResponse( http::status::bad_request, request.version(), request.keep_alive(), std::string{ BRQ}, std::string{ BRQstr});
      }
-      return MakeMapsResponse(
-        request.version(),
-        request.keep_alive());
+      return MakeMapsResponse( request.version(), request.keep_alive());
     }
     constexpr std::string_view kMapsPrefix = "/api/v1/maps/";
     if (target.starts_with(kMapsPrefix)) {
-     if (request.method() != http::verb::get &&
-       request.method() != http::verb::head) {
-      return MakeErrorResponse(
-       http::status::bad_request,
-       request.version(),
-       request.keep_alive(),
-       "badRequest",
-       "Bad request");
+     if (request.method() != http::verb::get && request.method() != http::verb::head) {
+      return MakeErrorResponse( http::status::bad_request, request.version(), request.keep_alive(), std::string{ BRQ}, std::string{ BRQstr});
      }
-      const std::string_view map_id =
-        target.substr(kMapsPrefix.size());
-      if (map_id.empty() ||
-        map_id.find('/') != std::string_view::npos) {
-        return MakeErrorResponse(
-          http::status::bad_request,
-          request.version(),
-          request.keep_alive(),
-          "badRequest",
-          "Bad request");
+      const std::string_view map_id = target.substr(kMapsPrefix.size());
+      if (map_id.empty() || map_id.find('/') != std::string_view::npos) {
+        return MakeErrorResponse( http::status::bad_request, request.version(), request.keep_alive(), std::string{ BRQ}, std::string{ BRQstr});
       }
-      const model::Map* map = game_.FindMap(
-        model::Map::Id{std::string(map_id)});
+      const model::Map* map = game_.FindMap( model::Map::Id{std::string(map_id)});
       if (map == nullptr) {
-        return MakeErrorResponse(
-          http::status::not_found,
-          request.version(),
-          request.keep_alive(),
-          "mapNotFound",
-          "Map not found");
+        return MakeErrorResponse( http::status::not_found, request.version(), request.keep_alive(), std::string{ NOMAP}, std::string{ NOMAPstr});
       }
-      return MakeMapResponse(
-        *map,
-        request.version(),
-        request.keep_alive());
+      return MakeMapResponse( *map, request.version(), request.keep_alive());
     }
-    return MakeErrorResponse(
-      http::status::bad_request,
-      request.version(),
-      request.keep_alive(),
-      "badRequest",
-      "Bad request");
+    return MakeErrorResponse( http::status::bad_request, request.version(), request.keep_alive(), std::string{ BRQ}, std::string{ BRQstr});
   }
   
   RequestHandler::StringResponse RequestHandler::HandleJoinGameRequest(
     const StringRequest& request) {
     if (request.method() != http::verb::post) {
-      auto response = MakeErrorResponse(
-        http::status::method_not_allowed,
-        request.version(),
-        request.keep_alive(),
-        "invalidMethod",
-        "Only POST method is expected");
+      auto response = MakeErrorResponse( http::status::method_not_allowed, request.version(), request.keep_alive(), std::string{ INVAM}, std::string{ ONLYPOST});
       response.set(http::field::allow, "POST");
       return response;
     }
     if (!IsJsonContentType(request)) {
-      return MakeErrorResponse(
-        http::status::bad_request,
-        request.version(),
-        request.keep_alive(),
-        "invalidArgument",
-        "Invalid content type");
+      return MakeErrorResponse( http::status::bad_request, request.version(), request.keep_alive(),
+        INVARG, INVcntT);
     }
     try {
       const json::value request_json = json::parse(request.body());
@@ -247,46 +132,23 @@ namespace http_handler {
       const std::string user_name = json::value_to<std::string>( object.at("userName"));
       const std::string map_id = json::value_to<std::string>( object.at("mapId"));
       if (user_name.empty()) {
-        return MakeErrorResponse(
-          http::status::bad_request,
-          request.version(),
-          request.keep_alive(),
-          "invalidArgument",
-          "Invalid name");
+        return MakeErrorResponse( http::status::bad_request, request.version(), request.keep_alive(), std::string{ INVARG}, std::string{ INVname});
       }
       try {
-        const app::Application::JoinResult result = app_.JoinGame(
-            model::Map::Id{map_id},
-            user_name);
-        return MakeJsonResponse(
-          http::status::ok,
-          request.version(),
-          request.keep_alive(),
-          json::object{
-            {"authToken", *result.token},
-            {"playerId", *result.player_id},
-          });
+        const app::Application::JoinResult result = app_.JoinGame( model::Map::Id{map_id}, user_name);
+        return MakeJsonResponse( http::status::ok, request.version(), request.keep_alive() 
+          , json::object{ {ATOK, *result.token}, {PID, *result.player_id}, });
       } catch (const std::out_of_range&) {
-        return MakeErrorResponse(
-          http::status::not_found,
-          request.version(),
-          request.keep_alive(),
-          "mapNotFound",
-          "Map not found");
+        return MakeErrorResponse( http::status::not_found, request.version(), request.keep_alive(), std::string{ NOMAP}, std::string{ NOMAPstr});
       }
     } catch (...) {
-      return MakeErrorResponse(
-        http::status::bad_request,
-        request.version(),
-        request.keep_alive(),
-        "invalidArgument",
-        "Join game request parse error");
+      return MakeErrorResponse( http::status::bad_request, request.version(), request.keep_alive(), std::string{ INVARG}, std::string{ RQerr});
     }
   }
   
   std::optional<model::Token> RequestHandler::ExtractBearerToken(
     const StringRequest& request) {
-    constexpr std::string_view kBearerPrefix = "Bearer ";
+    constexpr std::string_view kBearerPrefix{ "Bearer "};
     const auto authorization = request[http::field::authorization];
     const std::string_view value{ authorization.data(), authorization.size() };
     if (!value.starts_with(kBearerPrefix)) { return std::nullopt; }
@@ -300,47 +162,27 @@ namespace http_handler {
   
   RequestHandler::StringResponse RequestHandler::HandlePlayersRequest(
     const StringRequest& request) {
-    if (request.method() != http::verb::get &&
-      request.method() != http::verb::head) {
-      auto response = MakeErrorResponse(
-        http::status::method_not_allowed,
-        request.version(),
-        request.keep_alive(),
-        "invalidMethod",
-        "Invalid method");
+    if (request.method() != http::verb::get && request.method() != http::verb::head) {
+      auto response = MakeErrorResponse( http::status::method_not_allowed, request.version(), request.keep_alive(), std::string{ INVAM}, std::string{ INVAMstr});
       response.set(http::field::allow, "GET, HEAD");
       return response;
     }
     const std::optional<model::Token> token = ExtractBearerToken(request);
     if (!token) {
-      return MakeErrorResponse(
-        http::status::unauthorized,
-        request.version(),
-        request.keep_alive(),
-        "invalidToken",
-        "Authorization header is missing");
+      return MakeErrorResponse( http::status::unauthorized, request.version(), request.keep_alive(), std::string{ TOKENBE}, std::string{ NOAUTH});
     }
     const model::Player* current_player = app_.FindPlayerByToken(*token);
     if (current_player == nullptr) {
-      return MakeErrorResponse(
-        http::status::unauthorized,
-        request.version(),
-        request.keep_alive(),
-        "unknownToken",
-        "Player token has not been found");
+      return MakeErrorResponse( http::status::unauthorized, request.version(), request.keep_alive(), std::string{ TOKENFU}, std::string{ NOPLTOK});
     }
     const model::GameSession& current_session = current_player->GetSession();
     json::object players_json;
     for (const auto& [player_id, player] : app_.GetPlayers()) {
       if (&player.GetSession() != &current_session) { continue; }
-      players_json.emplace(
-        std::to_string(*player_id),
-        json::object{ {"name", player.GetDog().GetName()} }
-      );
+      players_json.emplace( std::to_string(*player_id), json::object{ {"name", player.GetDog().GetName()}});
     }
-    StringResponse response = MakeJsonResponse(
-      http::status::ok, request.version(),
-      request.keep_alive(), std::move(players_json));
+    StringResponse response = MakeJsonResponse( http::status::ok
+      , request.version(), request.keep_alive(), std::move(players_json));
     if (request.method() == http::verb::head) {
       response.body().clear();
       response.content_length(0);
@@ -361,115 +203,33 @@ namespace http_handler {
   }
 
 }  // namespace
-  
-/*  RequestHandler::StringResponse RequestHandler::HandleGameStateRequest(
-    const StringRequest& request) {
-    if (request.method() != http::verb::get &&
-      request.method() != http::verb::head) {
-      auto response = MakeErrorResponse(
-        http::status::method_not_allowed,
-        request.version(),
-        request.keep_alive(),
-        "invalidMethod",
-        "Invalid method");
-      response.set(http::field::allow, "GET, HEAD");
-      return response;
-    }
-    const std::optional<model::Token> token = ExtractBearerToken(request);
-    if (!token) {
-      return MakeErrorResponse(
-        http::status::unauthorized,
-        request.version(),
-        request.keep_alive(),
-        "invalidToken",
-        "Authorization header is required");
-    }
-    const model::Player* current_player = app_.FindPlayerByToken(*token);
-    if (current_player == nullptr) {
-      return MakeErrorResponse(
-        http::status::unauthorized,
-        request.version(),
-        request.keep_alive(),
-        "unknownToken",
-        "Player token has not been found");
-    }
-    const model::GameSession& current_session = current_player->GetSession();
-    json::object players_json;
-    for (const auto& [player_id, player] : app_.GetPlayers()) {
-      if (&player.GetSession() != &current_session) {
-        continue;
-      }
-      const model::Dog& dog = player.GetDog();
-      const model::Position position = dog.GetPosition();
-      const model::Speed speed = dog.GetSpeed();
-      players_json.emplace(
-        std::to_string(*player_id),
-        json::object{
-          {
-            "pos",
-            json::array{position.x, position.y},
-          },
-          {
-            "speed",
-            json::array{speed.x, speed.y},
-          },
-          {
-            "dir",
-            SerializeDirection(dog.GetDirection()),
-          },
-        });
-    }
-    StringResponse response = MakeJsonResponse(
-      http::status::ok,
-      request.version(),
-      request.keep_alive(),
-      json::object{ {"players", std::move(players_json)},});
-    // HEAD возвращает те же заголовки, что GET, но без тела.
-    if (request.method() == http::verb::head) {
-      response.body().clear();
-      response.content_length(0);
-    }
-    return response;
-  } */
-  
+
   RequestHandler::StringResponse RequestHandler::HandleGameStateRequest(
     const StringRequest& request) {
-    if (request.method() != http::verb::get &&
-      request.method() != http::verb::head) {
-      auto response = MakeErrorResponse(
-        http::status::method_not_allowed,
-        request.version(),
-        request.keep_alive(),
-        "invalidMethod",
-        "Invalid method");
+    if (request.method() != http::verb::get && request.method() != http::verb::head) {
+      auto response = MakeErrorResponse( http::status::method_not_allowed, request.version(), request.keep_alive(),
+        INVAM, INVAMstr);
       response.set(http::field::allow, "GET, HEAD");
       return response;
     }
-    return ExecuteAuthorized(
-      request,
+    return ExecuteAuthorized( request,
       [this, &request](model::Player& current_player) {
         json::object players_json;
         const auto& session = current_player.GetSession();
         for (const auto& [id, player] : app_.GetPlayers()) {
-          if (&player.GetSession() != &session) {
-            continue;
-          }
+          if (&player.GetSession() != &session) { continue; }
           const model::Dog& dog = player.GetDog();
           const auto pos = dog.GetPosition();
           const auto speed = dog.GetSpeed();
-          players_json.emplace(
-            std::to_string(*id),
-            json::object{
-              {"pos", json::array{pos.x, pos.y}},
-              {"speed", json::array{speed.x, speed.y}},
-              {"dir", DirectionToString(dog.GetDirection())}
+          players_json.emplace( std::to_string(*id)
+            , json::object{ 
+              {POS, json::array{pos.x, pos.y}},
+              {SPEED, json::array{speed.x, speed.y}},
+              {DIR, DirectionToString(dog.GetDirection())}
             });
         }
-        auto response = MakeJsonResponse(
-          http::status::ok,
-          request.version(),
-          request.keep_alive(),
-          json::object{{"players", std::move(players_json)}});
+        auto response = MakeJsonResponse( http::status::ok, request.version(), request.keep_alive()
+          , json::object{{PLAY, std::move(players_json)}});
         if (request.method() == http::verb::head) {
           response.body().clear();
           response.content_length(0);
@@ -482,12 +242,7 @@ namespace http_handler {
   RequestHandler::StringResponse RequestHandler::HandlePlayerActionRequest(
     const StringRequest& request) {
     if (request.method() != http::verb::post) {
-      auto response = MakeErrorResponse(
-        http::status::method_not_allowed,
-        request.version(),
-        request.keep_alive(),
-        "invalidMethod",
-        "Invalid method");
+      auto response{ MakeErrorResponse( http::status::method_not_allowed, request.version(), request.keep_alive(), std::string{ INVAM}, std::string{ INVAMstr})};
       response.set(http::field::allow, "POST");
       return response;
     }
@@ -495,51 +250,26 @@ namespace http_handler {
       request,
       [this, &request](model::Player& player) {
         if (!IsJsonContentType(request)) {
-          return MakeErrorResponse(
-            http::status::bad_request,
-            request.version(),
-            request.keep_alive(),
-            "invalidArgument",
-            "Expected application/json");
+          return MakeErrorResponse( http::status::bad_request, request.version(), request.keep_alive(), std::string{ INVARG}, std::string{ EXPAPLJS});
         }
         std::string move;
         try {
           const json::value body = json::parse(request.body());
-          move = json::value_to<std::string>(
-            body.as_object().at("move"));
+          move = json::value_to<std::string>( body.as_object().at(MOV));
         } catch (const std::exception&) {
-          return MakeErrorResponse(
-            http::status::bad_request,
-            request.version(),
-            request.keep_alive(),
-            "invalidArgument",
-            "Invalid action");
+          return MakeErrorResponse( http::status::bad_request, request.version(), request.keep_alive(), std::string{ INVARG}, std::string{ INVact});
         }
         model::Dog& dog = player.GetDog();
         const double dog_speed = player.GetSession().GetMap().GetDogSpeed();
-        if (move == "L") {
-          dog.SetMove(model::Direction::WEST, dog_speed);
-        } else if (move == "R") {
-          dog.SetMove(model::Direction::EAST, dog_speed);
-        } else if (move == "U") {
-          dog.SetMove(model::Direction::NORTH, dog_speed);
-        } else if (move == "D") {
-          dog.SetMove(model::Direction::SOUTH, dog_speed);
-        } else if (move.empty()) {
-          dog.Stop();
+        if (move == "L") { dog.SetMove(model::Direction::WEST, dog_speed); 
+        } else if (move == "R") { dog.SetMove(model::Direction::EAST, dog_speed);
+        } else if (move == "U") { dog.SetMove(model::Direction::NORTH, dog_speed);
+        } else if (move == "D") { dog.SetMove(model::Direction::SOUTH, dog_speed);
+        } else if (move.empty()) { dog.Stop();
         } else {
-          return MakeErrorResponse(
-            http::status::bad_request,
-            request.version(),
-            request.keep_alive(),
-            "invalidArgument",
-            "Unknown movement direction");
+          return MakeErrorResponse( http::status::bad_request, request.version(), request.keep_alive(), std::string{ INVARG}, std::string{ UKMD});
         }
-        return MakeJsonResponse(
-          http::status::ok,
-          request.version(),
-          request.keep_alive(),
-          json::object{});
+        return MakeJsonResponse( http::status::ok, request.version(), request.keep_alive(), json::object{});
       }
     );
   }  
@@ -547,49 +277,30 @@ namespace http_handler {
   RequestHandler::StringResponse RequestHandler::HandleTickRequest(
     const StringRequest& request) {
     if (request.method() != http::verb::post) {
-      auto response = MakeErrorResponse(
-        http::status::method_not_allowed,
-        request.version(),
-        request.keep_alive(),
-        "invalidMethod",
-        "Only POST method is expected");
+      auto response = MakeErrorResponse( http::status::method_not_allowed, request.version(), request.keep_alive(), std::string{ INVAM}, std::string{ ONLYPOST});
       response.set(http::field::allow, "POST");
       return response;
     }
     if (!IsJsonContentType(request)) {
-      return MakeErrorResponse(
-        http::status::bad_request,
-        request.version(),
-        request.keep_alive(),
-        "invalidArgument",
-        "Expected application/json");
+      return MakeErrorResponse( http::status::bad_request, request.version(), request.keep_alive(), std::string{ INVARG}, std::string{ EXPAPLJS});
     }
     std::int64_t delta_ms;
     try {
       const json::value body = json::parse(request.body());
       const json::object& object = body.as_object();
-      const json::value& delta = object.at("timeDelta");
+      const json::value& delta = object.at(TD);
       if (!delta.is_int64()) {
-          throw std::invalid_argument("Invalid timeDelta");
+          throw std::invalid_argument(std::string{ InvTD});
       }
       delta_ms = delta.as_int64();
       if (delta_ms < 0) {
-          throw std::invalid_argument("Negative timeDelta");
+          throw std::invalid_argument(std::string{ NegTD});
       }
     } catch (const std::exception&) {
-      return MakeErrorResponse(
-        http::status::bad_request,
-        request.version(),
-        request.keep_alive(),
-        "invalidArgument",
-        "Failed to parse tick request JSON");
+      return MakeErrorResponse( http::status::bad_request, request.version(), request.keep_alive(), std::string{ INVARG}, std::string{ FailedPARSE});
     }
     app_.Tick(delta_ms);
-    return MakeJsonResponse(
-      http::status::ok,
-      request.version(),
-      request.keep_alive(),
-      json::object{});
+    return MakeJsonResponse( http::status::ok, request.version(), request.keep_alive(), json::object{});
   }
 
 } // namespace http_handler

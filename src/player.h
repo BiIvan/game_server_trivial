@@ -17,6 +17,7 @@
 
 #include "model.h"
 #include "tagged.h"
+#include "literals.h"
 
 namespace model {
   
@@ -40,12 +41,7 @@ namespace model {
     double y = 0.0;
   };
   
-  enum class Direction {
-    NORTH,
-    SOUTH,
-    WEST,
-    EAST,
-  };
+  enum class Direction { NORTH, SOUTH, WEST, EAST, };
   
   class Dog {
     DogId id_;
@@ -111,9 +107,7 @@ namespace model {
   class GameSession {
     Position GenerateRandomPositionOnRoad() {
       const auto& roads = map_->GetRoads();
-      if (roads.empty()) {
-        throw std::logic_error("Cannot add dog to a map without roads");
-      }
+      if (roads.empty()) { throw std::logic_error(std::string{NOROADS}); }
       std::uniform_int_distribution<size_t> road_distribution( 0, roads.size() - 1);
       const Road& road = roads[road_distribution(random_generator_)];
       const Point start = road.GetStart();
@@ -149,18 +143,10 @@ namespace model {
       for (const Road& road : map_->GetRoads()) {
         const Point start = road.GetStart();
         const Point end = road.GetEnd();
-        const double min_x =
-          static_cast<double>(std::min(start.x, end.x)) -
-          kHalfRoadWidth;
-        const double max_x =
-          static_cast<double>(std::max(start.x, end.x)) +
-          kHalfRoadWidth;
-        const double min_y =
-          static_cast<double>(std::min(start.y, end.y)) -
-          kHalfRoadWidth;
-        const double max_y =
-          static_cast<double>(std::max(start.y, end.y)) +
-          kHalfRoadWidth;
+        const double min_x = static_cast<double>(std::min(start.x, end.x)) - kHalfRoadWidth;
+        const double max_x = static_cast<double>(std::max(start.x, end.x)) + kHalfRoadWidth;
+        const double min_y = static_cast<double>(std::min(start.y, end.y)) - kHalfRoadWidth;
+        const double max_y = static_cast<double>(std::max(start.y, end.y)) + kHalfRoadWidth;
         if (move_horizontal) {
           if (position.y >= min_y && position.y <= max_y) {
             intervals.push_back({min_x, max_x});
@@ -172,9 +158,8 @@ namespace model {
         }
       }
       std::sort(
-        intervals.begin(),
-        intervals.end(),
-        [](const Interval& lhs, const Interval& rhs) {
+        intervals.begin(), intervals.end()
+        , [](const Interval& lhs, const Interval& rhs) {
           return lhs.from < rhs.from;
         });
       std::vector<Interval> merged;
@@ -190,32 +175,20 @@ namespace model {
 
     void MoveDog(Dog& dog, double delta_seconds) const {
       const Speed speed = dog.GetSpeed();
-      if (speed.x == 0.0 && speed.y == 0.0) {
-        return;
-      }
+      if (speed.x == 0.0 && speed.y == 0.0) { return; }
       const bool move_horizontal = speed.x != 0.0;
       Position position = dog.GetPosition();
-      const double current =
-        move_horizontal ? position.x : position.y;
-      const double velocity =
-        move_horizontal ? speed.x : speed.y;
-      const double desired =
-        current + velocity * delta_seconds;
-      const auto intervals =
-        FindAvailableIntervals(position, move_horizontal);
+      const double current = move_horizontal ? position.x : position.y;
+      const double velocity = move_horizontal ? speed.x : speed.y;
+      const double desired = current + velocity * delta_seconds;
+      const auto intervals = FindAvailableIntervals(position, move_horizontal);
       for (const Interval interval : intervals) {
-        if (current < interval.from || current > interval.to) {
-          continue;
-        }
-        const double actual =
-          std::clamp(desired, interval.from, interval.to);
-        if (move_horizontal) {
-          position.x = actual;
-        } else {
-          position.y = actual;
+        if (current < interval.from || current > interval.to) { continue; }
+        const double actual = std::clamp(desired, interval.from, interval.to);
+        if (move_horizontal) { position.x = actual;
+        } else { position.y = actual;
         }
         dog.SetPosition(position);
-
         if (actual != desired) {
           dog.Stop();
         }
@@ -250,17 +223,14 @@ namespace model {
     Dog& AddDog(std::string name) {
       const auto& roads = map_->GetRoads();
       if (roads.empty()) {
-        throw std::logic_error( "Cannot add dog to a map without roads");
+        throw std::logic_error(std::string{NOROADS});
       }
       Position position;
       if (randomize_spawn_points_) {
         position = GenerateRandomPositionOnRoad();
       } else {
         const Point start = roads.front().GetStart();
-        position = {
-          static_cast<double>(start.x),
-          static_cast<double>(start.y)
-        };
+        position = { static_cast<double>(start.x), static_cast<double>(start.y)};
       }
       const DogId id{next_dog_id_++};
       return dogs_.emplace_back(id, std::move(name), position);
@@ -307,9 +277,7 @@ namespace model {
   public:
     Player& Add(Dog& dog, GameSession& session) {
       const PlayerId id{next_player_id_++};
-      auto [it, inserted] = players_.emplace(
-        id,
-        Player{id, session, dog});
+      auto [it, inserted] = players_.emplace( id, Player{id, session, dog});
       return it->second;
     }
     
@@ -331,14 +299,9 @@ namespace model {
   
   class PlayerTokens {
     std::string GenerateToken() {
-      const std::array values{
-        generator_(),
-        generator_()
-      };
+      const std::array values{ generator_(), generator_() };
       std::ostringstream output;
-      output << std::hex << std::setfill('0')
-          << std::setw(16) << values[0]
-          << std::setw(16) << values[1];
+      output << std::hex << std::setfill('0') << std::setw(16) << values[0] << std::setw(16) << values[1];
       return output.str();
     }
     
@@ -361,9 +324,7 @@ namespace model {
     
     Player* FindPlayerByToken(const Token& token) const noexcept {
       if (auto it = token_to_player_.find(token);
-        it != token_to_player_.end()) {
-        return it->second;
-      }
+        it != token_to_player_.end()) { return it->second; }
       return nullptr;
     }
   };
