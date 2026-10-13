@@ -20,6 +20,7 @@
 
 #include "model.h"
 #include "application.h"
+#include "extra_data.h"
 
 namespace http_handler {
   
@@ -48,6 +49,7 @@ namespace http_handler {
     StringResponse HandlePlayerActionRequest( const StringRequest& request);
     
     model::Game& game_;
+    const extra_data::ExtraData& extra_;
     app::Application app_;
     fs::path static_root_;
     Strand api_strand_;
@@ -300,28 +302,30 @@ namespace http_handler {
           std::move(maps));
     }
     
-    static StringResponse MakeMapResponse(
+    StringResponse MakeMapResponse(
       const model::Map& map,
       unsigned version,
-      bool keep_alive) {
-      return MakeJsonResponse(
-          http::status::ok,
-          version,
-          keep_alive,
-          SerializeMap(map));
+      bool keep_alive) const {
+      auto result = SerializeMap(map);
+      result["lootTypes"] = extra_.GetLootTypes(*map.GetId());
+      return MakeJsonResponse(http::status::ok, version, keep_alive, std::move(result));
     }
       
   public:
     explicit RequestHandler(
         model::Game& game,
+        const extra_data::ExtraData& extra,
         fs::path static_root,
         Strand api_strand)
         : game_(game)
+        , extra_(extra)
         , app_(game_)
         , static_root_{
               fs::weakly_canonical(fs::absolute(std::move(static_root)))}
         , api_strand_(std::move(api_strand)) {
     }
+    app::Application& GetApplication() noexcept { return app_; }
+
     RequestHandler(const RequestHandler&) = delete;
     RequestHandler& operator=(const RequestHandler&) = delete;
     template <typename Body, typename Allocator, typename Send>

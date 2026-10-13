@@ -1,0 +1,27 @@
+Complete replacement set for the supplied game_server_trivial deployment.
+Not an incremental patch: replace listed files together.
+Preserves one positional config-file argument and static-root discovery.
+Automatic timer always enabled: 50 ms, same strand as API.
+Random spawn retained.
+Collection: existing items at start of tick; chronological global events;
+return clears bag and awards map values; new loot generated at end of tick.
+Stationary gatherers ignored as in the supplied detector.
+
+Configuration now requires nonempty lootTypes with nonnegative integer value
+for each type, and lootGeneratorConfig. Supplied data/config.json includes them
+and preserves the previously supplied map geometry and dog speeds.
+Back up custom configuration before replacing it. Static assets are not bundled.
+The supplied loot definitions refer to static/assets/key.obj and wallet.obj.
+Make sure both exist, along with the original dog model and other frontend files.
+
+conanfile.txt/CMakeLists.txt/Dockerfile form a complete set. Catch2 is not required
+by the bundled standalone tests; miniaudio retained from the deployed dependency set.
+Extra unused .before-score files and ticker.h are not used by the explicit CMake.
+No manual game/tick endpoint added. Do not overwrite graded earlier solutions
+with this deployment variant.
+
+Verified locally with g++ C++20: all bundled model checks pass.
+Full HTTP/JSON/Boost/timer build NOT run locally (dependencies unavailable).
+Docker build runs model checks via CTest.
+After container startup: python3 verification/check_api.py http://127.0.0.1:18080
+This creates a test player; restart diagnostic container if you want a clean session.

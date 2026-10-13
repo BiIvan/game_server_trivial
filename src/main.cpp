@@ -11,6 +11,7 @@
 #include <boost/log/trivial.hpp>
 
 #include "logger.h"
+#include "movement_ticker.h"
 #include "http_server.h"
 #include "json_loader.h"
 #include "request_handler.h"
@@ -58,14 +59,21 @@ int main(int argc, const char* argv[]) {
     const fs::path config_path = argv[1];
     const fs::path static_root =
       config_path.parent_path().parent_path() / "static";
-    model::Game game = json_loader::LoadGame(config_path.string());
+    extra_data::ExtraData extra;
+    model::Game game = json_loader::LoadGame(config_path, extra);
     const unsigned num_threads = std::max(1u, std::thread::hardware_concurrency());
     net::io_context ioc{ static_cast<int>(num_threads) };
     g_ioc = &ioc;
     std::signal(SIGINT, HandleSignal);
     std::signal(SIGTERM, HandleSignal);
     auto api_strand = net::make_strand(ioc);
-    http_handler::RequestHandler handler{ game, static_root, std::move(api_strand)};
+    http_handler::RequestHandler handler{ game, extra, static_root, api_strand};
+    auto ticker = std::make_shared<MovementTicker>(
+      api_strand, std::chrono::milliseconds{50},
+      [&handler](std::chrono::milliseconds delta) {
+        handler.GetApplication().Tick(delta);
+      });
+    ticker->Start();
     const auto address = net::ip::make_address("0.0.0.0");
     constexpr unsigned short port = 8080;
     http_server::ServeHttp( ioc, tcp::endpoint{address, port}, handler);
@@ -94,3 +102,4 @@ int main(int argc, const char* argv[]) {
     return EXIT_FAILURE;
   }
 }
+

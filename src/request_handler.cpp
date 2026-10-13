@@ -359,75 +359,7 @@ namespace http_handler {
 
 }  // namespace
   
-/*  RequestHandler::StringResponse RequestHandler::HandleGameStateRequest(
-    const StringRequest& request) {
-    if (request.method() != http::verb::get &&
-      request.method() != http::verb::head) {
-      auto response = MakeErrorResponse(
-        http::status::method_not_allowed,
-        request.version(),
-        request.keep_alive(),
-        "invalidMethod",
-        "Invalid method");
-      response.set(http::field::allow, "GET, HEAD");
-      return response;
-    }
-    const std::optional<model::Token> token = ExtractBearerToken(request);
-    if (!token) {
-      return MakeErrorResponse(
-        http::status::unauthorized,
-        request.version(),
-        request.keep_alive(),
-        "invalidToken",
-        "Authorization header is required");
-    }
-    const model::Player* current_player = app_.FindPlayerByToken(*token);
-    if (current_player == nullptr) {
-      return MakeErrorResponse(
-        http::status::unauthorized,
-        request.version(),
-        request.keep_alive(),
-        "unknownToken",
-        "Player token has not been found");
-    }
-    const model::GameSession& current_session = current_player->GetSession();
-    json::object players_json;
-    for (const auto& [player_id, player] : app_.GetPlayers()) {
-      if (&player.GetSession() != &current_session) {
-        continue;
-      }
-      const model::Dog& dog = player.GetDog();
-      const model::Position position = dog.GetPosition();
-      const model::Speed speed = dog.GetSpeed();
-      players_json.emplace(
-        std::to_string(*player_id),
-        json::object{
-          {
-            "pos",
-            json::array{position.x, position.y},
-          },
-          {
-            "speed",
-            json::array{speed.x, speed.y},
-          },
-          {
-            "dir",
-            SerializeDirection(dog.GetDirection()),
-          },
-        });
-    }
-    StringResponse response = MakeJsonResponse(
-      http::status::ok,
-      request.version(),
-      request.keep_alive(),
-      json::object{ {"players", std::move(players_json)},});
-    // HEAD возвращает те же заголовки, что GET, но без тела.
-    if (request.method() == http::verb::head) {
-      response.body().clear();
-      response.content_length(0);
-    }
-    return response;
-  } */
+
   
   RequestHandler::StringResponse RequestHandler::HandleGameStateRequest(
     const StringRequest& request) {
@@ -454,19 +386,34 @@ namespace http_handler {
           const model::Dog& dog = player.GetDog();
           const auto pos = dog.GetPosition();
           const auto speed = dog.GetSpeed();
+          json::array bag;
+          bag.reserve(dog.GetBag().size());
+          for (const auto& item : dog.GetBag()) {
+            bag.emplace_back(json::object{{"id", item.id}, {"type", item.type}});
+          }
           players_json.emplace(
             std::to_string(*id),
             json::object{
               {"pos", json::array{pos.x, pos.y}},
               {"speed", json::array{speed.x, speed.y}},
-              {"dir", DirectionToString(dog.GetDirection())}
+              {"dir", DirectionToString(dog.GetDirection())},
+              {"bag", std::move(bag)},
+              {"score", dog.GetScore()}
             });
+        }
+        json::object lost_objects;
+        for (const auto& item : session.GetLostObjects()) {
+          lost_objects.emplace(std::to_string(item.id), json::object{
+            {"type", item.type},
+            {"pos", json::array{item.position.x, item.position.y}}
+          });
         }
         auto response = MakeJsonResponse(
           http::status::ok,
           request.version(),
           request.keep_alive(),
-          json::object{{"players", std::move(players_json)}});
+          json::object{{"players", std::move(players_json)},
+                       {"lostObjects", std::move(lost_objects)}});
         if (request.method() == http::verb::head) {
           response.body().clear();
           response.content_length(0);
@@ -513,8 +460,7 @@ namespace http_handler {
             "Invalid action");
         }
         model::Dog& dog = player.GetDog();
-        // Замените на скорость из вашей конфигурации игры/карты.
-        const double dog_speed = 1.0;
+        const double dog_speed = player.GetSession().GetMap().GetDogSpeed();
         if (move == "L") {
           dog.SetMove(model::Direction::WEST, dog_speed);
         } else if (move == "R") {
@@ -543,3 +489,4 @@ namespace http_handler {
   }  
 
 } // namespace http_handler
+

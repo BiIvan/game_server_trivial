@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <chrono>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -15,6 +16,10 @@ class Application {
 public:
     explicit Application(model::Game& game)
         : game_(game) {
+    }
+
+    void Tick(std::chrono::milliseconds delta) {
+        for (auto& [id, session] : sessions_) { session->Tick(delta); }
     }
 
     struct JoinResult {
@@ -58,7 +63,8 @@ private:
             return *it->second;
         }
 
-        auto session = std::make_unique<model::GameSession>(&map);
+        auto session = std::make_unique<model::GameSession>(
+            &map, true, game_.GetLootGeneratorConfig());
         model::GameSession* result = session.get();
 
         sessions_.emplace(map_id, std::move(session));
@@ -75,3 +81,4 @@ private:
 };
 
 }  // namespace app
+
