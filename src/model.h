@@ -1,5 +1,10 @@
 #pragma once
 
+#include <chrono>
+#include <cstdint>
+#include <cstddef>
+#include <cmath>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -7,6 +12,11 @@
 #include "tagged.h"
 
 namespace model {
+
+  struct LootGeneratorConfig {
+    std::chrono::milliseconds period{5000};
+    double probability = 0.5;
+  };
 
   using Dimension = int;
   using Coord = Dimension;
@@ -73,7 +83,7 @@ namespace model {
 
   class Building {
     Rectangle bounds_;
-    
+
   public:
     explicit Building(Rectangle bounds) noexcept
       : bounds_{bounds} {
@@ -112,7 +122,7 @@ namespace model {
     Offset offset_;
   };
 
-  
+
   class Map {
   public:
     using Id = util::Tagged<std::string, Map>;
@@ -153,17 +163,46 @@ namespace model {
     void AddBuilding(const Building& building) {
       buildings_.emplace_back(building);
     }
-    
+
     double GetDogSpeed() const noexcept {
       return dog_speed_;
     }
-    
+
     void SetDogSpeed(double speed) noexcept {
       dog_speed_ = speed;
     }
 
+    void SetLootTypesCount(unsigned count) {
+      if (count == 0) {
+        throw std::invalid_argument("lootTypes must not be empty");
+      }
+      loot_values_.resize(count, 0);
+      loot_types_count_ = count;
+    }
+
+    unsigned GetLootTypesCount() const noexcept {
+      return loot_types_count_;
+    }
+
+    void SetBagCapacity(std::size_t capacity) noexcept {
+      bag_capacity_ = capacity;
+    }
+
+    std::size_t GetBagCapacity() const noexcept {
+      return bag_capacity_;
+    }
+
+    void SetLootValue(unsigned type, std::uint64_t value) {
+      loot_values_.at(type) = value;
+    }
+
+    std::uint64_t GetLootValue(unsigned type) const {
+      return loot_values_.at(type);
+    }
+
+
     void AddOffice(Office office);
-    
+
   private:
     using OfficeIdToIndex = std::unordered_map<Office::Id, size_t, util::TaggedHasher<Office::Id>>;
 
@@ -172,29 +211,45 @@ namespace model {
     Roads roads_;
     Buildings buildings_;
     double dog_speed_{ 1.0};
+    unsigned loot_types_count_ = 0;
+    std::vector<std::uint64_t> loot_values_;
+    std::size_t bag_capacity_ = 3;
 
     OfficeIdToIndex warehouse_id_to_index_;
     Offices offices_;
-    
+
   };
 
   class Game {
     using MapIdHasher = util::TaggedHasher<Map::Id>;
     using MapIdToIndex = std::unordered_map<Map::Id, size_t, MapIdHasher>;
+    LootGeneratorConfig loot_generator_config_;
     std::vector<Map> maps_;
     MapIdToIndex map_id_to_index_;
-    
+
   public:
       using Maps = std::vector<Map>;
 
+      void SetLootGeneratorConfig(LootGeneratorConfig config) {
+        if (config.period.count() <= 0 || !std::isfinite(config.probability)
+            || config.probability < 0.0 || config.probability > 1.0) {
+          throw std::invalid_argument("Invalid loot generator configuration");
+        }
+        loot_generator_config_ = config;
+      }
+
+      const LootGeneratorConfig& GetLootGeneratorConfig() const noexcept {
+        return loot_generator_config_;
+      }
+
       void AddMap(Map map);
-      
+
       const Maps& GetMaps() const noexcept {
           return maps_;
       }
-      
+
       const Map* FindMap(const Map::Id& id) const noexcept {
-        auto it{ map_id_to_index_.find(id)}; 
+        auto it{ map_id_to_index_.find(id)};
         if( it != map_id_to_index_.end()){
           return &maps_.at(it->second);
         }

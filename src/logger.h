@@ -43,7 +43,7 @@ namespace logger {
           log_record[TIMEST] = boost::posix_time::to_iso_extended_string( timestamp_value.get());
         }
         const auto message_value = record[boost::log::expressions::smessage];
-        log_record[MSG] = message_value ? std::string(message_value.get()) : std::string{};
+        log_record[JSON_MESSAGE_KEY] = message_value ? std::string(message_value.get()) : std::string{};
         const auto data_value = record[additional_data];
         log_record[DATA] = data_value && data_value.get().is_object() 
           ? data_value.get() 

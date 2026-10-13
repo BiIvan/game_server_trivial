@@ -1,3 +1,5 @@
+#include <cmath>
+#include <limits>
 #include <string>
 #include <fstream>
 #include <sstream>
@@ -10,12 +12,12 @@
 
 using MAP = model::Map;
 
-namespace json_loader {  
+namespace json_loader {
 
   namespace json = boost::json;
-  
+
   namespace {
-    
+
     int GetInt(const json::object& object, std::string_view key) {
       return static_cast<int>(object.at(key).as_int64());
     }
@@ -52,12 +54,58 @@ namespace json_loader {
       };
     }
 
-    MAP ParseMap( const json::object& map_json, double default_dog_speed) {
+    std::size_t ReadBagCapacity(const json::object& object,
+                                std::string_view key, std::size_t fallback) {
+      const auto* value = object.if_contains(key);
+      if (!value) { return fallback; }
+      std::uint64_t capacity;
+      if (value->is_int64() && value->as_int64() >= 0) {
+        capacity = static_cast<std::uint64_t>(value->as_int64());
+      } else if (value->is_uint64()) {
+        capacity = value->as_uint64();
+      } else {
+        throw std::invalid_argument("Bag capacity must be a nonnegative integer");
+      }
+      if (capacity > std::numeric_limits<std::size_t>::max()) {
+        throw std::invalid_argument("Bag capacity is too large");
+      }
+      return static_cast<std::size_t>(capacity);
+    }
+
+    MAP ParseMap(const json::object& map_json, double default_dog_speed,
+                 std::size_t default_bag_capacity, extra_data::ExtraData& extra) {
       const json::value* configured_speed = map_json.if_contains(SPEEDOG);
       const double dog_speed = configured_speed
         ? json::value_to<double>(*configured_speed)
         : default_dog_speed;
+      if (!std::isfinite(dog_speed) || dog_speed <= 0.0) {
+        throw std::invalid_argument("Dog speed must be finite and positive");
+      }
       MAP map{ MAP::Id{GetString(map_json, ID)}, GetString(map_json, NAME), dog_speed};
+      map.SetBagCapacity(ReadBagCapacity(map_json, "bagCapacity", default_bag_capacity));
+      const auto& loot_types = map_json.at("lootTypes").as_array();
+      if (loot_types.empty() || loot_types.size() > std::numeric_limits<unsigned>::max()) {
+        throw std::invalid_argument("Invalid lootTypes array size");
+      }
+      for (const auto& type : loot_types) {
+        if (!type.is_object()) {
+          throw std::invalid_argument("lootTypes entries must be objects");
+        }
+      }
+      map.SetLootTypesCount(static_cast<unsigned>(loot_types.size()));
+      for (std::size_t i = 0; i < loot_types.size(); ++i) {
+        const auto& value = loot_types[i].as_object().at("value");
+        std::uint64_t points;
+        if (value.is_int64() && value.as_int64() >= 0) {
+          points = static_cast<std::uint64_t>(value.as_int64());
+        } else if (value.is_uint64()) {
+          points = value.as_uint64();
+        } else {
+          throw std::invalid_argument("Loot value must be a nonnegative integer");
+        }
+        map.SetLootValue(static_cast<unsigned>(i), points);
+      }
+      extra.SetLootTypes(*map.GetId(), loot_types);
       for (const json::value& value : map_json.at(ROAD).as_array()) {
         map.AddRoad(ParseRoad(value.as_object()));
       }
@@ -72,7 +120,7 @@ namespace json_loader {
 
   }  // namespace
 
-  model::Game LoadGame(const std::filesystem::path& json_path) {
+  model::Game LoadGame(const std::filesystem::path& json_path, extra_data::ExtraData& extra) {
     std::ifstream input{json_path};
     if (!input) {
       throw std::runtime_error(std::string{NOCONFIG} + json_path.string());
@@ -85,10 +133,23 @@ namespace json_loader {
     if (const json::value* value = root.if_contains(DFLT)) {
       default_dog_speed = json::value_to<double>(*value);
     }
+    const auto default_bag_capacity = ReadBagCapacity(root, "defaultBagCapacity", 3);
     model::Game game;
-    for (const json::value& value : root.at(MAPS).as_array()) {
-      game.AddMap(ParseMap(value.as_object(), default_dog_speed));
+    const auto& generator = root.at("lootGeneratorConfig").as_object();
+    const double period = json::value_to<double>(generator.at("period"));
+    const double probability = json::value_to<double>(generator.at("probability"));
+    const long double milliseconds = static_cast<long double>(period) * 1000.0L;
+    if (!std::isfinite(period) || milliseconds < 1.0L
+        || milliseconds >= static_cast<long double>(std::numeric_limits<std::int64_t>::max())) {
+      throw std::invalid_argument("Loot period must fit positive milliseconds");
     }
+    game.SetLootGeneratorConfig({std::chrono::milliseconds{
+        static_cast<std::int64_t>(std::round(milliseconds))}, probability});
+    extra_data::ExtraData loaded_extra;
+    for (const json::value& value : root.at(MAPS).as_array()) {
+      game.AddMap(ParseMap(value.as_object(), default_dog_speed, default_bag_capacity, loaded_extra));
+    }
+    extra = std::move(loaded_extra);
     return game;
   }
 

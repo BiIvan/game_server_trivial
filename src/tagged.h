@@ -1,13 +1,16 @@
 #pragma once
 
 #include <compare>
+#include <cstddef>
+#include <functional>
+#include <utility>
 
 namespace util {
 
   template <typename Value, typename Tag>
   class Tagged {
     Value value_;
-    
+
   public:
     using ValueType = Value;
     using TagType = Tag;
@@ -15,7 +18,7 @@ namespace util {
     explicit Tagged(Value&& v)
       : value_(std::move(v)) {
     }
-    
+
     explicit Tagged(const Value& v)
       : value_(v) {
     }
