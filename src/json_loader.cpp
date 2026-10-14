@@ -1,6 +1,7 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -19,38 +20,38 @@ namespace json_loader {
   namespace {
 
     int GetInt(const json::object& object, std::string_view key) {
-      return static_cast<int>(object.at(key).as_int64());
+        return static_cast<int>(object.at(key).as_int64());
     }
 
     std::string GetString(const json::object& object, std::string_view key) {
-      return json::value_to<std::string>(object.at(key));
+        return json::value_to<std::string>(object.at(key));
     }
 
     model::Road ParseRoad(const json::object& road) {
-      const model::Point start{ GetInt(road, X0), GetInt(road, Y0)};
-      if (road.if_contains(X1)) {
-        return model::Road{ model::Road::HORIZONTAL, start, GetInt(road, X1)};
+      const model::Point start{ GetInt(road, "x0"), GetInt(road, "y0")};
+      if (road.if_contains("x1")) {
+        return model::Road{ model::Road::HORIZONTAL, start, GetInt(road, "x1")};
       }
-      if (road.if_contains(Y1)) {
-        return model::Road{ model::Road::VERTICAL, start, GetInt(road, Y1)};
+      if (road.if_contains("y1")) {
+        return model::Road{ model::Road::VERTICAL, start, GetInt(road, "y1")};
       }
-      throw std::invalid_argument(std::string{ROADERR});
+      throw std::invalid_argument("Road must contain x1 or y1");
     }
 
     model::Building ParseBuilding(const json::object& building) {
       return model::Building{
         model::Rectangle{
-          .position = {GetInt(building, X),GetInt(building, Y)},
-          .size = {GetInt(building, W),GetInt(building, H)}
+          .position = {GetInt(building, "x"),GetInt(building, "y")},
+          .size = {GetInt(building, "w"),GetInt(building, "h")}
         }
       };
     }
 
     model::Office ParseOffice(const json::object& office) {
       return model::Office{
-        model::Office::Id{GetString(office, ID)},
-        model::Point{GetInt(office, X),GetInt(office, Y)},
-        model::Offset{GetInt(office, OffX),GetInt(office, OffY)},
+        model::Office::Id{GetString(office, "id")},
+        model::Point{GetInt(office, "x"),GetInt(office, "y")},
+        model::Offset{GetInt(office, "offsetX"),GetInt(office, "offsetY")},
       };
     }
 
@@ -109,10 +110,10 @@ namespace json_loader {
       for (const json::value& value : map_json.at(ROAD).as_array()) {
         map.AddRoad(ParseRoad(value.as_object()));
       }
-      for (const json::value& value : map_json.at(BUILD).as_array()) {
+      for (const json::value& value : map_json.at("buildings").as_array()) {
         map.AddBuilding(ParseBuilding(value.as_object()));
       }
-      for (const json::value& value : map_json.at(OFFICE).as_array()) {
+      for (const json::value& value : map_json.at("offices").as_array()) {
         map.AddOffice(ParseOffice(value.as_object()));
       }
       return map;
@@ -123,7 +124,7 @@ namespace json_loader {
   model::Game LoadGame(const std::filesystem::path& json_path, extra_data::ExtraData& extra) {
     std::ifstream input{json_path};
     if (!input) {
-      throw std::runtime_error(std::string{NOCONFIG} + json_path.string());
+      throw std::runtime_error("Cannot open config file: " + json_path.string());
     }
     std::stringstream buffer;
     buffer << input.rdbuf();

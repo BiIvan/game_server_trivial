@@ -3,25 +3,26 @@
 #include <chrono>
 #include <limits>
 #include <array>
-#include <cmath>
+#include <chrono>
+#include <stdexcept>
 #include <deque>
 #include <random>
 #include <string>
-#include <vector>
 #include <cstddef>
 #include <cstdint>
 #include <iomanip>
 #include <sstream>
 #include <utility>
 #include <algorithm>
-#include <stdexcept>
 #include <unordered_map>
+
+#include <vector>
+#include <cmath>
 
 #include "model.h"
 #include "collision_detector.h"
 #include "loot_generator.h"
 #include "tagged.h"
-#include "literals.h"
 
 namespace model {
 
@@ -151,7 +152,14 @@ namespace model {
   class GameSession {
     Position GenerateRandomPositionOnRoad() {
       const auto& roads = map_->GetRoads();
-      if (roads.empty()) { throw std::logic_error(std::string{NOROADS}); }
+      // По условиям игровая карта для входа должна иметь хотя бы одну дорогу.
+      // Защита нужна, чтобы не допустить неопределённого поведения.
+      //if (roads.empty()) {
+      //  return {};
+      //}
+      if (roads.empty()) {
+        throw std::logic_error("Cannot add dog to a map without roads");
+      }
       std::uniform_int_distribution<size_t> road_distribution( 0, roads.size() - 1);
       const Road& road = roads[road_distribution(random_generator_)];
       const Point start = road.GetStart();
@@ -174,40 +182,28 @@ namespace model {
     }
 
     static constexpr double kHalfRoadWidth = 0.4;
+    struct Interval { double from; double to; };
 
-    struct Interval {
-      double from;
-      double to;
-    };
-
-    std::vector<Interval> FindAvailableIntervals(
-      Position position,
-      bool move_horizontal) const {
+    std::vector<Interval> FindAvailableIntervals(Position pos, bool horizontal) const {
       std::vector<Interval> intervals;
-      for (const Road& road : map_->GetRoads()) {
-        const Point start = road.GetStart();
-        const Point end = road.GetEnd();
-        const double min_x = static_cast<double>(std::min(start.x, end.x)) - kHalfRoadWidth;
-        const double max_x = static_cast<double>(std::max(start.x, end.x)) + kHalfRoadWidth;
-        const double min_y = static_cast<double>(std::min(start.y, end.y)) - kHalfRoadWidth;
-        const double max_y = static_cast<double>(std::max(start.y, end.y)) + kHalfRoadWidth;
-        if (move_horizontal) {
-          if (position.y >= min_y && position.y <= max_y) {
-            intervals.push_back({min_x, max_x});
-          }
-        } else {
-          if (position.x >= min_x && position.x <= max_x) {
-            intervals.push_back({min_y, max_y});
-          }
+      for (const auto& road : map_->GetRoads()) {
+        const auto a = road.GetStart();
+        const auto b = road.GetEnd();
+        const double min_x = std::min(a.x, b.x) - kHalfRoadWidth;
+        const double max_x = std::max(a.x, b.x) + kHalfRoadWidth;
+        const double min_y = std::min(a.y, b.y) - kHalfRoadWidth;
+        const double max_y = std::max(a.y, b.y) + kHalfRoadWidth;
+        if (horizontal && pos.y >= min_y && pos.y <= max_y) {
+          intervals.push_back({min_x, max_x});
+        } else if (!horizontal && pos.x >= min_x && pos.x <= max_x) {
+          intervals.push_back({min_y, max_y});
         }
       }
-      std::sort(
-        intervals.begin(), intervals.end()
-        , [](const Interval& lhs, const Interval& rhs) {
-          return lhs.from < rhs.from;
-        });
+      std::sort(intervals.begin(), intervals.end(), [](const auto& a, const auto& b) {
+        return a.from < b.from;
+      });
       std::vector<Interval> merged;
-      for (const Interval interval : intervals) {
+      for (const auto& interval : intervals) {
         if (merged.empty() || interval.from > merged.back().to) {
           merged.push_back(interval);
         } else {
@@ -217,25 +213,19 @@ namespace model {
       return merged;
     }
 
-    void MoveDog(Dog& dog, double delta_seconds) const {
-      const Speed speed = dog.GetSpeed();
+    void MoveDog(Dog& dog, double seconds) const {
+      const auto speed = dog.GetSpeed();
       if (speed.x == 0.0 && speed.y == 0.0) { return; }
-      const bool move_horizontal = speed.x != 0.0;
-      Position position = dog.GetPosition();
-      const double current = move_horizontal ? position.x : position.y;
-      const double velocity = move_horizontal ? speed.x : speed.y;
-      const double desired = current + velocity * delta_seconds;
-      const auto intervals = FindAvailableIntervals(position, move_horizontal);
-      for (const Interval interval : intervals) {
+      const bool horizontal = speed.x != 0.0;
+      auto pos = dog.GetPosition();
+      const double current = horizontal ? pos.x : pos.y;
+      const double desired = current + (horizontal ? speed.x : speed.y) * seconds;
+      for (const auto& interval : FindAvailableIntervals(pos, horizontal)) {
         if (current < interval.from || current > interval.to) { continue; }
         const double actual = std::clamp(desired, interval.from, interval.to);
-        if (move_horizontal) { position.x = actual;
-        } else { position.y = actual;
-        }
-        dog.SetPosition(position);
-        if (actual != desired) {
-          dog.Stop();
-        }
+        if (horizontal) { pos.x = actual; } else { pos.y = actual; }
+        dog.SetPosition(pos);
+        if (actual != desired) { dog.Stop(); }
         return;
       }
       dog.Stop();
@@ -286,6 +276,7 @@ namespace model {
     bool randomize_spawn_points_ = false;
     std::uint64_t next_dog_id_ = 0;
     std::mt19937 random_generator_;
+    // deque сохраняет адреса объектов Dog при добавлении новых собак.
     std::deque<Dog> dogs_;
     loot_gen::LootGenerator loot_generator_;
     std::uint64_t next_loot_id_ = 0;
@@ -380,16 +371,12 @@ namespace model {
     }
 
     Dog& AddDog(std::string name) {
-      const auto& roads = map_->GetRoads();
-      if (roads.empty()) {
-        throw std::logic_error(std::string{NOROADS});
-      }
       Position position;
       if (randomize_spawn_points_) {
         position = GenerateRandomPositionOnRoad();
       } else {
-        const Point start = roads.front().GetStart();
-        position = { static_cast<double>(start.x), static_cast<double>(start.y)};
+        const auto start = map_->GetRoads().front().GetStart();
+        position = {static_cast<double>(start.x), static_cast<double>(start.y)};
       }
       const DogId id{next_dog_id_++};
       return dogs_.emplace_back(id, std::move(name), position);
@@ -436,7 +423,9 @@ namespace model {
   public:
     Player& Add(Dog& dog, GameSession& session) {
       const PlayerId id{next_player_id_++};
-      auto [it, inserted] = players_.emplace( id, Player{id, session, dog});
+      auto [it, inserted] = players_.emplace(
+        id,
+        Player{id, session, dog});
       return it->second;
     }
 
@@ -458,9 +447,14 @@ namespace model {
 
   class PlayerTokens {
     std::string GenerateToken() {
-      const std::array values{ generator_(), generator_() };
+      const std::array values{
+        generator_(),
+        generator_()
+      };
       std::ostringstream output;
-      output << std::hex << std::setfill('0') << std::setw(16) << values[0] << std::setw(16) << values[1];
+      output << std::hex << std::setfill('0')
+          << std::setw(16) << values[0]
+          << std::setw(16) << values[1];
       return output.str();
     }
 
@@ -483,7 +477,9 @@ namespace model {
 
     Player* FindPlayerByToken(const Token& token) const noexcept {
       if (auto it = token_to_player_.find(token);
-        it != token_to_player_.end()) { return it->second; }
+        it != token_to_player_.end()) {
+        return it->second;
+      }
       return nullptr;
     }
   };
